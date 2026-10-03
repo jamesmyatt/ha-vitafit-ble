@@ -1,0 +1,9 @@
+{
+  "entity": {
+    "sensor": {
+      "impedance": {
+        "default": "mdi:omega"
+      }
+    }
+  }
+}

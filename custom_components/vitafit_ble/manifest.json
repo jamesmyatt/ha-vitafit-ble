@@ -1,0 +1,19 @@
+{
+  "domain": "vitafit_ble",
+  "name": "Vitafit",
+  "bluetooth": [
+    {
+      "local_name": "Vitafit*"
+    }
+  ],
+  "codeowners": ["@jamesmyatt"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/jamesmyatt/ha-vitafit-ble",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/jamesmyatt/ha-vitafit-ble/issues",
+  "loggers": ["vitafit_ble"],
+  "requirements": ["vitafit-ble==0.1.0"],
+  "version": "0.1.0"
+}
