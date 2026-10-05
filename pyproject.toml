@@ -8,6 +8,7 @@ dev = [
   # Requirements of the usb integration, which bluetooth depends on.
   "aiousbwatcher==1.1.2",
   "serialx==1.11.0",
+  "mypy",
   "pytest-homeassistant-custom-component==0.13.368",
   "ruff",
   "vitafit-ble==0.1.0",
