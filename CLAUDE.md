@@ -15,6 +15,7 @@ Owner's decisions. Don't revisit them without asking.
 - **Availability:** core default, so entities are unavailable while the scale sleeps and after a restart. (`oralb` instead overrides `available` and `assumed_state`; adding those to `VitafitBluetoothSensorEntity` would change this.)
 - **Detection:** local name `Vitafit*` only. The manufacturer data uses ID `0xFFFF`, the SIG test ID many devices share, so it isn't matched.
 - **Display unit:** the integration never sets it, so the scale keeps its own. Readings are always kg.
+
 ## Architecture
 
 - `coordinator.py`: `VitafitActiveBluetoothProcessorCoordinator`, based on core `inkbird/coordinator.py`. It listens passively, so advertisements can come from any proxy. It polls when HA isn't stopping, the library's `poll_needed` is true, and a connectable adapter or proxy can reach the scale. The poll swaps in a connectable `BLEDevice` and calls the library's `async_poll` with the coordinator's `weight_only`.
