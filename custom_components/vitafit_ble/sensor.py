@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import override
 
 from vitafit_ble import DeviceClass, DeviceKey, SensorUpdate, Units
+from vitafit_ble.const import MANUFACTURER, MODEL
 
 from homeassistant.components.bluetooth.passive_update_processor import (
     PassiveBluetoothDataProcessor,
@@ -24,6 +25,7 @@ from homeassistant.const import (
     UnitOfMass,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.sensor import sensor_device_info_to_hass_device_info
 
@@ -81,6 +83,32 @@ def sensor_update_to_bluetooth_data_update(
     )
 
 
+def _seed_entities(
+    processor: PassiveBluetoothDataProcessor[SensorValueType, SensorUpdate],
+    name: str,
+) -> None:
+    """Create the sensors that weren't restored, before the first advertisement."""
+    data = processor.data
+    seed = PassiveBluetoothDataUpdate[SensorValueType](
+        entity_descriptions={
+            entity_key: description
+            for key, description in SENSOR_DESCRIPTIONS.items()
+            if (entity_key := PassiveBluetoothEntityKey(key, None))
+            not in data.entity_descriptions
+        },
+    )
+    if not seed.entity_descriptions:
+        return
+    if None not in data.devices:
+        # Entities keep the device info they're created with,
+        # so match what the library sends.
+        seed.devices[None] = DeviceInfo(
+            name=name, manufacturer=MANUFACTURER, model=MODEL
+        )
+    data.update(seed)
+    processor.async_update_listeners(data)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: VitafitConfigEntry,
@@ -96,6 +124,7 @@ async def async_setup_entry(
     entry.async_on_unload(
         entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
     )
+    _seed_entities(processor, entry.title)
 
 
 class VitafitBluetoothSensorEntity(
