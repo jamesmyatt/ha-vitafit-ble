@@ -1,0 +1,51 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+default_stages: [pre-commit]
+
+ci:
+  autofix_commit_msg: "chore(pre-commit.ci): auto fixes"
+  autoupdate_commit_msg: "chore(pre-commit.ci): pre-commit autoupdate"
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: debug-statements
+      - id: check-builtin-literals
+      - id: check-case-conflict
+      - id: check-docstring-first
+      - id: check-json
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.9.9
+    hooks:
+      - id: prettier
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.3
+    hooks:
+      - id: codespell
+        args: [--ignore-words-list=hass]
+  # A local hook, so pre-commit.ci's autoupdate can't move ruff off the version
+  # HA core uses. Renovate ignores it, so update it by hand with homeassistant.
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        language: python
+        additional_dependencies: [ruff==0.16.3]
+        entry: ruff check --force-exclude
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+        require_serial: true
+      - id: ruff-format
+        name: ruff format
+        language: python
+        additional_dependencies: [ruff==0.16.3]
+        entry: ruff format --force-exclude
+        types_or: [python, pyi]
+        require_serial: true

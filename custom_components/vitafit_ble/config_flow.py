@@ -2,16 +2,16 @@
 
 from typing import Any, override
 
-import probatio
 from vitafit_ble import VitafitBluetoothDeviceData as DeviceData
+import voluptuous as vol
 
+from homeassistant.components import bluetooth
 from homeassistant.components.bluetooth import (
     BluetoothServiceInfoBleak,
     async_discovered_service_info,
 )
 from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_ADDRESS
-from homeassistant.core import DOMAIN as HOMEASSISTANT_DOMAIN
 
 from .const import DOMAIN
 
@@ -71,6 +71,7 @@ class VitafitConfigFlow(ConfigFlow, domain=DOMAIN):
                 title=self._discovered_devices[address], data={}
             )
 
+        await bluetooth.async_request_active_scan(self.hass)
         current_addresses = self._async_current_ids(include_ignore=False)
         for discovery_info in async_discovered_service_info(self.hass, False):
             address = discovery_info.address
@@ -81,13 +82,11 @@ class VitafitConfigFlow(ConfigFlow, domain=DOMAIN):
                 self._discovered_devices[address] = device.title or discovery_info.name
 
         if not self._discovered_devices:
-            return self.async_abort(
-                reason="no_devices_found", translation_domain=HOMEASSISTANT_DOMAIN
-            )
+            return self.async_abort(reason="no_devices_found")
 
         return self.async_show_form(
             step_id="user",
-            data_schema=probatio.Schema(
-                {probatio.Required(CONF_ADDRESS): probatio.In(self._discovered_devices)}
+            data_schema=vol.Schema(
+                {vol.Required(CONF_ADDRESS): vol.In(self._discovered_devices)}
             ),
         )

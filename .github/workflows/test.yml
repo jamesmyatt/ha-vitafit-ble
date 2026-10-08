@@ -2,19 +2,42 @@ name: Test
 
 on:
   push:
-    branches: [main]
+    branches:
+      - "main"
   pull_request:
+    branches:
+      - "main"
+
+permissions: {}
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: "Mypy and pytest"
+    runs-on: "ubuntu-latest"
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - name: Checkout the repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
-      - run: uv sync
-      - run: uv run ruff format --check .
-      - run: uv run ruff check .
-      - run: uv run mypy custom_components
-      - run: uv run pytest
+          cache: "pip"
+          cache-dependency-path: |
+            requirements_common.txt
+            requirements_lint.txt
+            requirements_dev.txt
+            requirements_test.txt
+
+      - name: Install requirements
+        run: |
+          python3 -m pip install -r requirements_common.txt
+          python3 -m pip install -r requirements_test.txt
+
+      - name: Mypy
+        run: python3 -m mypy custom_components
+
+      - name: Pytest
+        run: python3 -m pytest

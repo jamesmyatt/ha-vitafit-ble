@@ -6,17 +6,25 @@ Unofficial; not affiliated with Vitafit.
 
 ## Sensors
 
-| Sensor | Unit | Notes |
-|---|---|---|
-| Weight | kg | 0.01 kg resolution |
-| Impedance | ohm | Whole-body. Unknown if you step off early or wear socks. |
-| Signal strength | dBm | Diagnostic; disabled by default |
+| Sensor          | Unit | Notes                                                    |
+| --------------- | ---- | -------------------------------------------------------- |
+| Weight          | kg   | 0.01 kg resolution                                       |
+| Impedance       | ohm  | Whole-body. Unknown if you step off early or wear socks. |
+| Signal strength | dBm  | Diagnostic; disabled by default                          |
 
 The integration does not calculate body composition or assign readings to people. Build these from the weight and impedance sensors with templates or automations.
 
+## Weight-only mode
+
+The **Weight-only mode** switch (under the device's configuration entities) does the same as the Vitafit app's "Weight Only Mode": the scale passes no current through the body, so impedance is not measured. The manual recommends it if you are pregnant or have a pacemaker or other internal device.
+
+- A change applies from the next weigh-in that Home Assistant reads.
+- The scale remembers the mode, so it also applies to weigh-ins when Home Assistant doesn't connect. Each connection from Home Assistant or the Vitafit app sets it again.
+- Home Assistant can't read the mode back from the scale, so if you change it in the Vitafit app, the switch won't show the change, and Home Assistant will set its own mode at the next weigh-in.
+
 ## Requirements
 
-- Home Assistant 2026.10 or later.
+- Home Assistant 2026.9 or later.
 - A Bluetooth adapter or an ESPHome Bluetooth proxy within range of the scale. A proxy needs `active: true`, because the integration has to connect to the scale.
 
 ## Installation
@@ -38,8 +46,8 @@ Step on the scale to wake it. Home Assistant discovers it and shows a notificati
 
 1. Stepping on the scale makes it advertise. The integration then connects through the nearest connectable adapter or proxy.
 2. It waits up to 30 s for a stable weight.
-3. It acknowledges the weight, which makes the scale measure impedance.
-4. It waits up to 6 s for impedance, then disconnects.
+3. It acknowledges the weight.
+4. It waits up to 10 s for impedance, then disconnects.
 
 Readings within 60 s of the previous connection are ignored, so a weigh-in is not read twice.
 
@@ -47,7 +55,7 @@ Entities show as unavailable while the scale is asleep, and this includes after 
 
 ## Known limitations
 
-- Weight is always reported in kg; the scale's display unit is not read or changed.
+- Weight is always reported in kg. The scale keeps whichever display unit it is set to (kg, lb or st).
 - Two weigh-ins less than 60 s apart: only the first is read.
 
 ## Removal
@@ -56,4 +64,4 @@ Entities show as unavailable while the scale is asleep, and this includes after 
 
 ## Licence
 
-MIT. Protocol from openScale's [VT701 handler](https://github.com/oliexdev/openScale/pull/1423); implementation in [vitafit-ble](https://github.com/jamesmyatt/vitafit-ble).
+MIT

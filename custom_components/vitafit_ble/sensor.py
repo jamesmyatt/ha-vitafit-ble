@@ -87,7 +87,6 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Vitafit sensors."""
-    coordinator = entry.runtime_data
     processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
     entry.async_on_unload(
         processor.async_add_entities_listener(
@@ -95,7 +94,7 @@ async def async_setup_entry(
         )
     )
     entry.async_on_unload(
-        coordinator.async_register_processor(processor, SensorEntityDescription)
+        entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
     )
 
 

@@ -6,12 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from vitafit_ble.protocol import ACK_STABLE_WEIGHT, HELLO_COMMANDS
+from vitafit_ble.protocol import ACK_STABLE_WEIGHT, start_commands
 
 from homeassistant.core import HomeAssistant
 
-STABLE = bytes.fromhex("5a 0a 26 10 02 00 00 21 21 34 0a aa")
-IMPEDANCE = bytes.fromhex("5a 0b 26 11 00 00 00 00 00 01 89 b4 aa")
+# Frames captured from a real VT701: 87.35 kg (stable) and 466 ohm.
+STABLE = bytes.fromhex("5a 0a 26 10 02 00 00 21 22 1f 22 aa")
+IMPEDANCE = bytes.fromhex("5a 0b 26 11 00 00 00 00 00 01 d2 ef aa")
+# The last command the integration sends before waiting for a stable weight.
+HELLO_COMMAND = tuple(start_commands())[-1]
 
 
 class FakeScaleClient:
@@ -21,6 +24,7 @@ class FakeScaleClient:
         """Initialise."""
         self._callback: Callable[[Any, bytearray], None] | None = None
         self.disconnect = AsyncMock()
+        self.written: list[bytes] = []
 
     async def start_notify(
         self, _: str, callback: Callable[[Any, bytearray], None]
@@ -31,7 +35,8 @@ class FakeScaleClient:
     async def write_gatt_char(self, _: str, data: bytes, **__: Any) -> None:
         """Reply to commands."""
         assert self._callback is not None
-        if data == HELLO_COMMANDS[-1]:
+        self.written.append(data)
+        if data == HELLO_COMMAND:
             self._callback(None, bytearray(STABLE))
         elif data == ACK_STABLE_WEIGHT:
             self._callback(None, bytearray(IMPEDANCE))

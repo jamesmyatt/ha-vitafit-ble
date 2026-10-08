@@ -1,7 +1,9 @@
 """Test the Vitafit config flow."""
 
-from unittest.mock import patch
+from collections.abc import Generator
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.vitafit_ble.const import DOMAIN
@@ -13,6 +15,15 @@ from homeassistant.data_entry_flow import FlowResultType
 from . import ADDRESS, NOT_VITAFIT_SERVICE_INFO, VITAFIT_SERVICE_INFO
 
 TITLE = "Vitafit VT701 AA60"
+
+
+@pytest.fixture(autouse=True)
+def mock_request_active_scan() -> Generator[AsyncMock]:
+    """Skip the active scan that the user step requests."""
+    with patch(
+        "custom_components.vitafit_ble.config_flow.bluetooth.async_request_active_scan"
+    ) as mock:
+        yield mock
 
 
 async def test_bluetooth_discovery(hass: HomeAssistant) -> None:
@@ -58,7 +69,9 @@ async def test_bluetooth_discovery_already_configured(hass: HomeAssistant) -> No
     assert result["reason"] == "already_configured"
 
 
-async def test_user_setup(hass: HomeAssistant) -> None:
+async def test_user_setup(
+    hass: HomeAssistant, mock_request_active_scan: AsyncMock
+) -> None:
     """Test manual setup."""
     with patch(
         "custom_components.vitafit_ble.config_flow.async_discovered_service_info",
@@ -69,6 +82,7 @@ async def test_user_setup(hass: HomeAssistant) -> None:
         )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "user"
+    mock_request_active_scan.assert_awaited_once_with(hass)
 
     with patch("custom_components.vitafit_ble.async_setup_entry", return_value=True):
         result = await hass.config_entries.flow.async_configure(

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -e
+
+cd "$(dirname "$0")/.."
+
+# uv installs into .venv in the repo root (or the active venv). The venv needs
+# no pip, so requirements_common.txt is only used by CI.
+uv pip install --requirement requirements_test.txt
+pre-commit install

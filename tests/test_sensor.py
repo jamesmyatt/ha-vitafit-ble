@@ -33,12 +33,12 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
 
     weight = hass.states.get("sensor.vitafit_vt701_aa60_weight")
     assert weight is not None
-    assert weight.state == "85.0"
+    assert weight.state == "87.35"
     assert weight.attributes[ATTR_UNIT_OF_MEASUREMENT] == "kg"
 
     impedance = hass.states.get("sensor.vitafit_vt701_aa60_impedance")
     assert impedance is not None
-    assert impedance.state == "393"
+    assert impedance.state == "466"
     assert impedance.attributes[ATTR_UNIT_OF_MEASUREMENT] == "ohm"
 
     assert hass.states.get("sensor.vitafit_vt701_aa60_signal_strength") is not None

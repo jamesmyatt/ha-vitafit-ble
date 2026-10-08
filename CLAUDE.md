@@ -1,149 +1,66 @@
 # CLAUDE.md: ha-vitafit-ble
 
-Home Assistant custom integration (HACS) for the Vitafit VT701 Bluetooth body fat scale. Domain `vitafit_ble`.
+Home Assistant custom integration (HACS) for the Vitafit VT701 Bluetooth body fat scale. Domain `vitafit_ble`, minimum HA 2026.9 (Python 3.14.2 or later).
 
-The protocol code lives in the sibling library repo `../vitafit-ble` (PyPI package `vitafit-ble`, which has its own `CLAUDE.md`). Keep both repos side by side:
+Everything about the protocol (weigh-in sequence, polling, timeouts) is in the sibling library repo `../vitafit-ble`, PyPI package `vitafit-ble`; see its `CLAUDE.md` and `docs/protocol.md`. It's pinned in `manifest.json` and `requirements_dev.txt`. Keep both repos side by side.
 
-```
-work/
-├── vitafit-ble/      # library
-└── ha-vitafit-ble/   # this repo
-```
+## Decisions
 
-## Status (5 Oct 2026)
+Owner's decisions. Don't revisit them without asking.
 
-- Code is complete, with one initial commit. All local checks pass (see Verification).
-- **Not yet tested on a real scale.** The weigh-in has only been run against a fake GATT client.
-- The GitHub repos don't exist yet, and `vitafit-ble` is not on PyPI (404).
-- HA 2026.10.0 is not released yet; the latest tag is `2026.10.0b0`.
-
-## Owner's working preferences
-
-- Based in the UK; use metric units. Prefers Python.
-- Think first. Don't assume or guess; ask, offer options, and wait for feedback.
-- Simplicity first. Give overviews and offer details. Gather all feedback before regenerating. Make minimal changes to existing content.
-- Define success criteria, then loop until verified.
-- Follow current idiomatic best practice. Plain prose, with no mannered writing.
-- Owner's homelab: Home Assistant, ESPHome Bluetooth proxies (all `active: true`), Proxmox, TrueNAS, Ubiquiti.
-
-## Decisions already made
-
-Don't revisit these without asking.
-
-| Decision | Choice | Reason |
-|---|---|---|
-| Approach | New integration and library, not a fork of `prabhjotsbhatia-ca/vitafit_body_fat_scale` | The fork bypasses HA's Bluetooth stack (no proxy support), never sends the ack (so no impedance), and contains copied Etekcity unit commands. |
-| Scope | **Minimal.** Weight and impedance only, plus the default RSSI diagnostic. | HA can build anything else from these. |
-| Body composition | **Excluded.** No sensors that need height, age or sex. | Owner's decision. |
-| Users | No assignment of readings to people | Out of scope; HA templates or automations can do it. |
-| Protocol source | openScale `VitafitVT701Handler.kt` ([PR #1423](https://github.com/oliexdev/openScale/pull/1423)) | The owner's VT701 works with openScale, so treat its protocol as correct. |
-| Patterns | Follow HA core, using `oralb` / `oralb-ble` as the template | Owner's request |
-| Names | Domain `vitafit_ble`, PyPI `vitafit-ble`, repos `jamesmyatt/vitafit-ble` and `jamesmyatt/ha-vitafit-ble`, codeowner `@jamesmyatt` | Owner's choice |
-| Licence | MIT (both repos) | Protocol facts are reused, but no GPL code from openScale was copied. |
-| Minimum HA | 2026.10 | Lets the integration use `probatio` and central abort translations. |
-| Availability | Core default: unavailable while the scale is asleep | Owner's choice (see Corrections) |
-| Library | Published on PyPI, pinned in `manifest.json` | Owner's decision |
-
-### Corrections
-
-During planning I said `oralb` uses core's default availability. That was wrong: `oralb` overrides `available` to always return `True` and sets `assumed_state` when the device is not broadcasting. The owner chose "core default" on the basis of the wrong description. If they want `oralb` behaviour, add those two property overrides to `VitafitBluetoothSensorEntity` in `sensor.py`. Ask before changing it.
-
+- **Scope:** weight and impedance sensors, the default RSSI diagnostic, and a weight-only mode switch. No body composition (nothing needing height, age or sex) and no assigning readings to people; HA can build these.
+- **Weight-only mode:** a config switch (so automations can use it), off by default. Its state is restored after a restart, because the scale's mode can't be read back. Every connection sets the mode again.
+- **Patterns:** follow HA core `inkbird` / `inkbird-ble`, because inkbird also reads devices by GATT polling.
+- **Repo template:** follow [ludeeus/integration_blueprint](https://github.com/ludeeus/integration_blueprint), except: `uv pip` locally (CI uses pip), pre-commit instead of `lint.yml`, and tests and `test.yml`, which the blueprint doesn't have.
+- **Availability:** core default, so entities are unavailable while the scale sleeps and after a restart. (`oralb` instead overrides `available` and `assumed_state`; adding those to `VitafitBluetoothSensorEntity` would change this.)
+- **Detection:** local name `Vitafit*` only. The manufacturer data uses ID `0xFFFF`, the SIG test ID many devices share, so it isn't matched.
+- **Display unit:** the integration never sets it, so the scale keeps its own. Readings are always kg.
 ## Architecture
 
-- `__init__.py`: an `ActiveBluetoothProcessorCoordinator`, structured the same as core `oralb/__init__.py`.
-  - It listens passively, so advertisements can come from any proxy.
-  - When `poll_needed` is true, it swaps in a connectable `BLEDevice` (adapter or proxy) and calls the library's `async_poll`.
-- `sensor.py`: maps `PassiveBluetoothDataProcessor` and sensor-state-data to entities. Keys are `mass`, `impedance` and `signal_strength`.
-- `config_flow.py`: Bluetooth discovery plus a user step.
-  - Imports `probatio`, not voluptuous.
-  - `no_devices_found` uses `translation_domain=HOMEASSISTANT_DOMAIN`, which needs HA 2026.10 or later.
-- `manifest.json`: matches `local_name: "Vitafit*"`. openScale saw the name "Vitafit Body Fat"; no manufacturer data is required.
-- `translations/en.json`: custom integrations need `translations/`, because `strings.json` is only compiled for core integrations.
-- `brand/icon.png` and `brand/icon@2x.png`: an original generic scale glyph, not Vitafit's logo. HA 2026.3 or later serves these locally, and HACS requires them.
-- The weigh-in sequence, polling and timeouts are in the library; see `../vitafit-ble/CLAUDE.md`.
+- `coordinator.py`: `VitafitActiveBluetoothProcessorCoordinator`, based on core `inkbird/coordinator.py`. It listens passively, so advertisements can come from any proxy. It polls when HA isn't stopping, the library's `poll_needed` is true, and a connectable adapter or proxy can reach the scale. The poll swaps in a connectable `BLEDevice` and calls the library's `async_poll` with the coordinator's `weight_only`.
+- `__init__.py`: stores the coordinator as `entry.runtime_data`.
+- `sensor.py`: `PassiveBluetoothDataProcessor` entities with keys `mass`, `impedance` and `signal_strength`.
+- `switch.py`: the weight-only switch, a `RestoreEntity` like core `voip`'s. It sets `coordinator.weight_only`, and joins the sensors' device through the Bluetooth connection, because it's created before the first advertisement.
+- `config_flow.py`: Bluetooth discovery, plus a user step that requests an active scan first.
+- 2026.9 constraints: config flows use `import voluptuous as vol` (later HA releases alias it to Probatio). `no_devices_found` has its own string, because central abort translations need 2026.10. Custom integrations need `translations/en.json`, not `strings.json`.
+- `brand/`: an original generic icon, not Vitafit's logo. HACS requires it.
 
 ## Commands
 
-All commands run from this repo's root and need `uv` and Python 3.14.2 or later.
-
-**Setup before `vitafit-ble` is on PyPI.** `uv sync` fails at this stage, so install the sibling repo editable:
+Run from the repo root. HA doesn't run on Windows (`fcntl`), so use Linux, WSL or the dev container (`.devcontainer.json`, venv at `/home/vscode/.venv`).
 
 ```sh
-uv venv -p 3.14
-uv pip install --prerelease=allow -e ../vitafit-ble \
-  "pytest-homeassistant-custom-component==0.13.368" \
-  "aiousbwatcher==1.1.2" "serialx==1.11.0" ruff mypy
+uv venv --python 3.14
+. .venv/bin/activate
+scripts/setup                   # requirements_test.txt and pre-commit install
+uv pip install -e ../vitafit-ble   # optional: unreleased library changes
+scripts/develop                 # run HA with config/configuration.yaml (debug logging)
+
+pre-commit run --all-files      # ruff, prettier, codespell and others; scripts/lint does the same
+mypy custom_components
+pytest --cov=custom_components.vitafit_ble --cov-report=term-missing
 ```
 
-**Setup after publishing:** `uv sync`
+Requirements files: `common` (pip, CI only), `lint` (pre-commit), `dev` (+ `colorlog`, `homeassistant`, `vitafit-ble`), `test` (+ mypy, the test harness, and `aiousbwatcher` and `serialx`, which the `bluetooth` integration needs through `usb`). `pyproject.toml` only holds the pytest and mypy config.
 
-**Checks**, which match `.github/workflows/test.yml`:
+CI: `test.yml` (mypy and pytest), `validate.yml` (hassfest on HA dev, and HACS), and pre-commit.ci (configured in `.pre-commit-config.yaml`). Mypy isn't a pre-commit hook, because it needs `homeassistant` installed.
 
-```sh
-.venv/bin/ruff format --check .
-.venv/bin/ruff check .
-.venv/bin/mypy custom_components
-.venv/bin/pytest
-.venv/bin/pytest --cov=custom_components.vitafit_ble --cov-report=term-missing
-script/hassfest.sh            # HA_TAG=2026.10.0 script/hassfest.sh once released
-```
+Bluetooth in `scripts/develop` needs an ESPHome proxy, because neither WSL nor the container can reach the PC's adapter.
 
-Notes:
+## Version pins
 
-- The ruff config in `pyproject.toml` is copied from HA core 2026.10. Keep it in sync with core rather than tuning it.
-- `aiousbwatcher` and `serialx` are only there because the `bluetooth` integration depends on `usb`; the test harness doesn't install them.
-- `prerelease = "allow"` is needed because harness 0.13.368 pins `homeassistant==2026.10.0b0`.
+Keep these on the minimum HA version (2026.9.4) and update them together, by hand, when the owner raises it:
 
-## Verification
+- `homeassistant` and the test harness (`pytest-homeassistant-custom-component` 0.13.367)
+- core's ruff (0.16.3, a local hook in `.pre-commit-config.yaml`), mypy (2.3.1) and colorlog (6.10.1), plus `aiousbwatcher` and `serialx`
+- `hacs.json`'s `homeassistant`
+- `.ruff.toml`, copied from core's `[tool.ruff.lint]`. Its only local additions are `target-version`, `custom_components` as first-party, and a `TID251` ignore for `tests/**`. Don't tune it.
 
-Last run on 3–5 Oct 2026.
+`.github/renovate.json` disables updates to these. Renovate still updates Actions SHAs, dev container features and `vitafit-ble`, bumping the `manifest.json` pin in the same PR.
 
-| Check | Result |
-|---|---|
-| ruff (core rule set), strict mypy | Pass |
-| pytest against HA 2026.10.0b0, clean env | 9 passed, 97% coverage. Only `__init__.py` lines 52–57 (the no-connectable-device branch) are uncovered. |
-| hassfest (2026.10.0b0) | 0 invalid |
-| HACS action | Not run; it needs the GitHub repo |
-| Real VT701 via an ESPHome proxy | **Not done** |
+## Open items
 
-### Success criteria agreed with the owner
-
-1. Weight matches the scale display to within 0.05 kg.
-2. Impedance is captured on barefoot weigh-ins. Weight is still recorded if the user steps off early.
-3. It works via an ESPHome proxy with no local adapter.
-4. Values appear in history and statistics. With the current availability choice, entities are not available after a restart.
-5. Tests pass on captured frames, and hassfest/HACS validation passes.
-
-## Next steps
-
-1. Publish the library: create `jamesmyatt/vitafit-ble`, add a PyPI trusted publisher (environment `pypi`, workflow `release.yml`), then publish GitHub release `v0.1.0`.
-2. Create `jamesmyatt/ha-vitafit-ble` with a description and topics (HACS checks these). Push, then confirm the hassfest, HACS and test workflows pass.
-3. Do a real weigh-in with `logger: logs: {vitafit_ble: debug, custom_components.vitafit_ble: debug}` set. Check the frames and the success criteria.
-4. When HA 2026.10.0 ships:
-   - Bump `pytest-homeassistant-custom-component` to the release that pins it.
-   - Remove `prerelease = "allow"`.
-   - Update `HA_TAG` in `script/hassfest.sh`.
-5. Optionally add a GitHub release workflow and a `CHANGELOG.md`.
-
-### Assumptions to verify on the real scale
-
-- The advertised local name starts with "Vitafit".
-- Byte 2 of every frame is `0x26`. The old fork's test frame had `0x00`; openScale says `0x26`, and the owner's scale works with openScale.
-- The hello sequence is accepted, and the scale stops advertising soon after a weigh-in. The library's 60 s poll interval assumes this.
-
-## Research summary
-
-**Existing VT701 integrations.** The only one is `prabhjotsbhatia-ca/vitafit_body_fat_scale` with its library `vitafit_vt701_ble`, last updated Oct 2024 and never published to PyPI. These don't support the VT701:
-
-- ble-scale-sync
-- clentfort/homeassistant-openScale (Beurer only)
-- Feelfit (cloud)
-- the Fitdays ESPHome thread (different protocol, service `0xFFB0`)
-
-**Relevant HA and HACS changes:**
-
-- [Probatio replaced voluptuous](https://developers.home-assistant.io/blog/2026/09/30/probatio-validation-engine/) in 2026.9. Core now bans `import voluptuous`.
-- [Shared abort reasons are translated centrally](https://developers.home-assistant.io/blog/2026/09/28/central-config-flow-abort-reasons/) from 2026.10.
-- [Custom integrations ship their own brand images](https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api/) from 2026.3.
-- [HACS integration requirements](https://hacs.xyz/docs/publish/integration/)
-- [Quality scale checklist](https://developers.home-assistant.io/docs/core/integration-quality-scale/checklist). The current code targets Bronze plus `discovery`, `devices`, `entity-translations` and `entity-device-class`.
+- Push to `jamesmyatt/ha-vitafit-ble` and confirm CI passes, including hassfest and HACS.
+- Tests haven't been re-run since the inkbird refactor (8 Oct 2026); before that, 12 passed with 98% coverage.
+- Not yet tested in HA or via an ESPHome proxy. Weight and impedance did match the display on the real scale with the library's `scripts/capture.py`. Owner's criteria still to check: it works via a proxy with no local adapter, and readings appear in history and statistics.
+- Step on twice, about 5 minutes apart, in HA. If the second weigh-in isn't polled (HA drops repeated identical advertisements), copy inkbird's fallback poll timer. That first needs a recency check in the library's `poll_needed`.

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "minimumReleaseAge": "3 days",
+  "osvVulnerabilityAlerts": true,
+  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "timezone": "Europe/London",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Library pin in manifest.json, updated with requirements_dev.txt",
+      "managerFilePatterns": ["/(^|/)manifest\\.json$/"],
+      "matchStrings": ["\"(?<depName>vitafit-ble)==(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "pypi"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Home Assistant should match the homeassistant key in hacs.json",
+      "matchPackageNames": ["homeassistant"],
+      "enabled": false
+    },
+    {
+      "description": "These pins track Home Assistant core at the minimum version; update them with homeassistant",
+      "matchPackageNames": [
+        "aiousbwatcher",
+        "colorlog",
+        "mypy",
+        "pytest-homeassistant-custom-component",
+        "serialx"
+      ],
+      "enabled": false
+    }
+  ]
+}

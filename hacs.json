@@ -1,4 +1,5 @@
 {
   "name": "Vitafit",
-  "homeassistant": "2026.10.0"
+  "homeassistant": "2026.9.0",
+  "hacs": "2.0.5"
 }

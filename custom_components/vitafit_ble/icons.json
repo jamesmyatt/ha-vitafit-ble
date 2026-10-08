@@ -4,6 +4,14 @@
       "impedance": {
         "default": "mdi:omega"
       }
+    },
+    "switch": {
+      "weight_only": {
+        "default": "mdi:flash",
+        "state": {
+          "on": "mdi:flash-off"
+        }
+      }
     }
   }
 }
