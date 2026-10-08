@@ -16,7 +16,7 @@ from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, EntityCateg
 from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 
-from . import ADDRESS, VITAFIT_SERVICE_INFO, inject_service_info
+from . import ADDRESS, inject_service_info, make_service_info
 from .conftest import FakeScaleClient
 
 ENTITY_ID = "switch.vitafit_vt701_aa60_weight_only_mode"
@@ -56,7 +56,7 @@ async def test_default_measures_impedance(
     assert entity.entity_category is EntityCategory.CONFIG
     assert entity.unique_id == f"{ADDRESS}-weight_only"
 
-    inject_service_info(hass, VITAFIT_SERVICE_INFO)
+    inject_service_info(hass, make_service_info())
     await hass.async_block_till_done()
     assert mock_scale.written[0] == NORMAL_MODE_COMMAND
 
@@ -71,7 +71,7 @@ async def test_weight_only(hass: HomeAssistant, mock_scale: FakeScaleClient) -> 
     assert state.state == STATE_ON
     assert entry.runtime_data.weight_only
 
-    inject_service_info(hass, VITAFIT_SERVICE_INFO)
+    inject_service_info(hass, make_service_info())
     await hass.async_block_till_done()
     assert mock_scale.written[0] == WEIGHT_ONLY_MODE_COMMAND
 

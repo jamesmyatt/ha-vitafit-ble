@@ -14,6 +14,6 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/jamesmyatt/ha-vitafit-ble/issues",
   "loggers": ["vitafit_ble"],
-  "requirements": ["vitafit-ble==0.1.0"],
+  "requirements": ["vitafit-ble==0.2.0"],
   "version": "0.1.0"
 }

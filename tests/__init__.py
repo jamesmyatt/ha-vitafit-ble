@@ -1,9 +1,8 @@
 """Tests for the Vitafit integration."""
 
-import time
-
 from bleak.backends.device import BLEDevice
 from bleak.backends.scanner import AdvertisementData
+from bluetooth_data_tools import monotonic_time_coarse
 
 from homeassistant.components.bluetooth import (
     SOURCE_LOCAL,
@@ -37,7 +36,7 @@ def make_service_info(name: str = "Vitafit Body Fat") -> BluetoothServiceInfoBle
         device=BLEDevice(ADDRESS, name, {}),
         advertisement=advertisement,
         connectable=True,
-        time=time.monotonic(),
+        time=monotonic_time_coarse(),
         tx_power=-127,
     )
 

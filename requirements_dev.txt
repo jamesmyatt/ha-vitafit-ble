@@ -1,4 +1,4 @@
 -r requirements_lint.txt
 colorlog==6.10.1
 homeassistant==2026.9.4
-vitafit-ble==0.1.0
+vitafit-ble==0.2.0

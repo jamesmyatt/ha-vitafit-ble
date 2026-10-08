@@ -18,9 +18,9 @@ Owner's decisions. Don't revisit them without asking.
 
 ## Architecture
 
-- `coordinator.py`: `VitafitActiveBluetoothProcessorCoordinator`, based on core `inkbird/coordinator.py`. It listens passively, so advertisements can come from any proxy. It polls when HA isn't stopping, the library's `poll_needed` is true, and a connectable adapter or proxy can reach the scale. The poll swaps in a connectable `BLEDevice` and calls the library's `async_poll` with the coordinator's `weight_only`.
+- `coordinator.py`: `VitafitActiveBluetoothProcessorCoordinator`, based on core `inkbird/coordinator.py`. It listens passively, so advertisements can come from any proxy. It polls when HA isn't stopping, the library's `poll_needed` is true, and a connectable adapter or proxy can reach the scale. The poll swaps in a connectable `BLEDevice` and calls the library's `async_poll` with the coordinator's `weight_only`. HA doesn't dispatch an advertisement that repeats the last one, so a weigh-in soon after another one wouldn't be polled. Like inkbird, a fallback timer (`FALLBACK_POLL_INTERVAL`, 5 s) checks the Bluetooth manager's latest advertisement. It relies on the recency check in `poll_needed` (`ADVERTISEMENT_MAX_AGE`, 5 s), so it doesn't poll a sleeping scale. The interval only sets how long a repeat weigh-in waits for its poll. A `_polling` flag stops the timer from queuing a second poll while one is running.
 - `__init__.py`: stores the coordinator as `entry.runtime_data`.
-- `sensor.py`: `PassiveBluetoothDataProcessor` entities with keys `mass`, `impedance` and `signal_strength`.
+- `sensor.py`: `PassiveBluetoothDataProcessor` entities with keys `mass`, `impedance` and `signal_strength`. The processor only creates entities when their descriptions arrive, so setup seeds any that weren't restored. This way they exist (unavailable) before the first weigh-in. The seed's device info matches the library's, because entities keep the device info they're created with.
 - `switch.py`: the weight-only switch, a `RestoreEntity` like core `voip`'s. It sets `coordinator.weight_only`, and joins the sensors' device through the Bluetooth connection, because it's created before the first advertisement.
 - `config_flow.py`: Bluetooth discovery, plus a user step that requests an active scan first.
 - 2026.9 constraints: config flows use `import voluptuous as vol` (later HA releases alias it to Probatio). `no_devices_found` has its own string, because central abort translations need 2026.10. Custom integrations need `translations/en.json`, not `strings.json`.
@@ -61,5 +61,4 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 
 ## Open items
 
-- Not yet tested in HA or via an ESPHome proxy. Weight and impedance did match the display on the real scale with the library's `scripts/capture.py`. Owner's criteria still to check: it works via a proxy with no local adapter, and readings appear in history and statistics.
-- Step on twice, about 5 minutes apart, in HA. If the second weigh-in isn't polled (HA drops repeated identical advertisements), copy inkbird's fallback poll timer. That first needs a recency check in the library's `poll_needed`.
+- The fallback poll timer needs `vitafit-ble` 0.2.0 (the recency check in `poll_needed`). It's pinned but not yet on PyPI, so CI fails until it's released. On the real scale, check that two weigh-ins about 5 minutes apart are both polled.
