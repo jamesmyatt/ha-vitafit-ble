@@ -61,7 +61,5 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 
 ## Open items
 
-- Push to `jamesmyatt/ha-vitafit-ble` and confirm CI passes, including hassfest and HACS.
-- Tests haven't been re-run since the inkbird refactor (8 Oct 2026); before that, 12 passed with 98% coverage.
 - Not yet tested in HA or via an ESPHome proxy. Weight and impedance did match the display on the real scale with the library's `scripts/capture.py`. Owner's criteria still to check: it works via a proxy with no local adapter, and readings appear in history and statistics.
 - Step on twice, about 5 minutes apart, in HA. If the second weigh-in isn't polled (HA drops repeated identical advertisements), copy inkbird's fallback poll timer. That first needs a recency check in the library's `poll_needed`.

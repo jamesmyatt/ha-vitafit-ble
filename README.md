@@ -1,6 +1,6 @@
-# Vitafit for Home Assistant
+# Vitafit BLE for Home Assistant
 
-Local Bluetooth integration for the Vitafit VT701 body fat scale. It works with ESPHome Bluetooth proxies.
+Local Bluetooth integration for Vitafit BLE devices. It works with ESPHome Bluetooth proxies.
 
 Unofficial; not affiliated with Vitafit.
 
