@@ -19,7 +19,15 @@ Unofficial; not affiliated with Vitafit.
 | Real-time weight | kg   | The weight as it settles, while connected. Not in long-term statistics.        |
 | Signal strength  | dBm  | Diagnostic; disabled by default                                                |
 
-The integration does not calculate body composition or assign readings to people. Build these from the weight and impedance sensors with templates or automations.
+The integration does not calculate body composition or assign readings to people. Build these from the weight and impedance sensors with templates or automations (see [Examples](#examples)).
+
+## Use cases
+
+- Keep your weight history in Home Assistant, without the Vitafit app or a cloud account.
+- Graph weight trends on a dashboard, from the long-term statistics.
+- Send a notification, or a reading to another service, after each weigh-in.
+- Calculate BMI or body composition with your own templates.
+- Show the real-time weight on a wall tablet while you stand on the scale.
 
 ## Weight-only mode
 
@@ -60,10 +68,49 @@ Readings within 60 s of the previous connection are ignored, so a weigh-in is no
 
 Weight and impedance keep the last weigh-in while the scale is asleep and after a Home Assistant restart. A weigh-in without a stable weight, or a failed connection, leaves them unchanged. Real-time weight is only available while connected, and signal strength only while the scale is advertising.
 
+## Examples
+
+Replace `sensor.vitafit_vt701_aa60_weight` with your weight sensor's entity ID.
+
+Notify your phone after each weigh-in:
+
+```yaml
+automation:
+  - alias: Weigh-in notification
+    triggers:
+      - trigger: state
+        entity_id: sensor.vitafit_vt701_aa60_weight
+        not_from: unknown
+    actions:
+      - action: notify.mobile_app_your_phone
+        data:
+          message: "Weight: {{ trigger.to_state.state }} kg"
+```
+
+A BMI sensor, for someone 1.75 m tall:
+
+```yaml
+template:
+  - sensor:
+      - name: BMI
+        unit_of_measurement: kg/m²
+        state_class: measurement
+        state: "{{ (states('sensor.vitafit_vt701_aa60_weight') | float / 1.75 ** 2) | round(1) }}"
+        availability: "{{ has_value('sensor.vitafit_vt701_aa60_weight') }}"
+```
+
 ## Known limitations
 
 - Weight is always reported in kg. The scale keeps whichever display unit it is set to (kg, lb or st).
 - Two weigh-ins less than 60 s apart: only the first is read.
+- A weigh-in with exactly the same weight as the last one doesn't change the weight sensor's state, so state triggers don't fire.
+
+## Troubleshooting
+
+- **The scale isn't discovered:** step on it to wake it. It only advertises while it's awake. A Bluetooth adapter or proxy must be in range, and an ESPHome proxy needs `active: true`.
+- **The weight doesn't update:** stay on the scale until the weight is stable. Check that a connectable adapter or proxy is in range. If the Vitafit app is open nearby, it may connect to the scale first.
+- **Impedance is unknown:** stand barefoot on the four electrodes, and stay on until impedance is measured. Check that **Weight-only mode** is off.
+- **Reporting a problem:** on the integration's page, choose **⋮ → Enable debug logging**, weigh in, then disable it to download the log. Attach the log and the diagnostics (**⋮ → Download diagnostics** on the same page) to an [issue](https://github.com/jamesmyatt/ha-vitafit-ble/issues).
 
 ## Removal
 
