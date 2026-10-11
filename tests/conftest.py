@@ -10,7 +10,9 @@ from vitafit_ble.protocol import ACK_STABLE_WEIGHT, start_commands
 
 from homeassistant.core import HomeAssistant
 
-# Frames captured from a real VT701: 87.35 kg (stable) and 466 ohm.
+# Frames captured from a real VT701: 87.40 kg (settling), 87.35 kg (stable)
+# and 466 ohm.
+SETTLING = bytes.fromhex("5a 0a 26 10 01 00 00 21 22 24 1a aa")
 STABLE = bytes.fromhex("5a 0a 26 10 02 00 00 21 22 1f 22 aa")
 IMPEDANCE = bytes.fromhex("5a 0b 26 11 00 00 00 00 00 01 d2 ef aa")
 # The last command the integration sends before waiting for a stable weight.
@@ -37,6 +39,7 @@ class FakeScaleClient:
         assert self._callback is not None
         self.written.append(data)
         if data == HELLO_COMMAND:
+            self._callback(None, bytearray(SETTLING))
             self._callback(None, bytearray(STABLE))
         elif data == ACK_STABLE_WEIGHT:
             self._callback(None, bytearray(IMPEDANCE))
@@ -79,6 +82,6 @@ def mock_scale() -> Generator[FakeScaleClient]:
     """Patch the connection to return a fake scale."""
     client = FakeScaleClient()
     with patch(
-        "vitafit_ble.parser.establish_connection", AsyncMock(return_value=client)
+        "vitafit_ble.device.establish_connection", AsyncMock(return_value=client)
     ):
         yield client

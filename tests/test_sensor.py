@@ -22,6 +22,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
 from . import ADDRESS, inject_service_info, make_service_info
@@ -38,17 +39,43 @@ async def _async_setup(hass: HomeAssistant) -> MockConfigEntry:
     return entry
 
 
+WEIGHT = "sensor.vitafit_vt701_aa60_weight"
+IMPEDANCE = "sensor.vitafit_vt701_aa60_impedance"
+REAL_TIME_WEIGHT = "sensor.vitafit_vt701_aa60_real_time_weight"
+SIGNAL_STRENGTH = "sensor.vitafit_vt701_aa60_signal_strength"
+
+
+def _state(hass: HomeAssistant, entity_id: str) -> str:
+    state = hass.states.get(entity_id)
+    assert state is not None
+    return state.state
+
+
 @pytest.mark.usefixtures("entity_registry_enabled_by_default")
 async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> None:
-    """Test a full weigh-in creates the sensors."""
+    """Test a full weigh-in updates the sensors."""
     entry = await _async_setup(hass)
-    assert {state.state for state in hass.states.async_all("sensor")} == {
-        STATE_UNAVAILABLE
+    # Before the scale is seen, the weigh-in sensors are available but empty.
+    assert {
+        state.entity_id: state.state for state in hass.states.async_all("sensor")
+    } == {
+        WEIGHT: STATE_UNKNOWN,
+        IMPEDANCE: STATE_UNKNOWN,
+        REAL_TIME_WEIGHT: STATE_UNAVAILABLE,
+        SIGNAL_STRENGTH: STATE_UNAVAILABLE,
     }
-    assert len(hass.states.async_all("sensor")) == 3
 
+    real_time: list[str] = []
+    async_track_state_change_event(
+        hass,
+        REAL_TIME_WEIGHT,
+        lambda event: real_time.append(event.data["new_state"].state),
+    )
     inject_service_info(hass, make_service_info())
     await hass.async_block_till_done()
+
+    # The live weight while connected, then unavailable once disconnected.
+    assert real_time == ["87.4", "87.35", STATE_UNAVAILABLE]
 
     weight = hass.states.get("sensor.vitafit_vt701_aa60_weight")
     assert weight is not None
@@ -60,7 +87,7 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
     assert impedance.state == "466"
     assert impedance.attributes[ATTR_UNIT_OF_MEASUREMENT] == "ohm"
 
-    assert hass.states.get("sensor.vitafit_vt701_aa60_signal_strength") is not None
+    assert _state(hass, SIGNAL_STRENGTH) == "-60"
     mock_scale.disconnect.assert_awaited_once()
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -70,19 +97,47 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
 async def test_connection_failure(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """A failed connection is logged and creates no weight reading."""
+    """A failed connection is logged, and keeps the last weigh-in."""
     await _async_setup(hass)
     with patch(
-        "vitafit_ble.parser.establish_connection",
+        "vitafit_ble.device.establish_connection",
         AsyncMock(side_effect=BleakError("out of range")),
     ):
         inject_service_info(hass, make_service_info())
         await hass.async_block_till_done()
 
     assert "Bluetooth error whilst polling" in caplog.text
-    weight = hass.states.get("sensor.vitafit_vt701_aa60_weight")
-    assert weight is not None
-    assert weight.state == STATE_UNKNOWN
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+    assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
+
+
+async def test_no_stable_weight_keeps_last_weigh_in(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """A weigh-in without a stable weight leaves the last one in place."""
+    await _async_setup(hass)
+    with patch(
+        "homeassistant.components.bluetooth.active_update_processor"
+        ".monotonic_time_coarse",
+        return_value=monotonic_time_coarse() - 120,
+    ):
+        inject_service_info(hass, make_service_info())
+        await hass.async_block_till_done()
+    assert _state(hass, WEIGHT) == "87.35"
+
+    # The repeat advertisement is polled by the timer, after the cooldown.
+    with patch(
+        "vitafit_ble.session.VitafitSession.async_measure", AsyncMock(return_value=None)
+    ):
+        inject_service_info(hass, make_service_info())
+        async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL)
+        async_fire_time_changed(
+            hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
+        )
+        await hass.async_block_till_done()
+    assert mock_scale.disconnect.await_count == 2
+    assert _state(hass, WEIGHT) == "87.35"
+    assert _state(hass, IMPEDANCE) == "466"
 
 
 async def test_repeat_weigh_in_polled_by_timer(

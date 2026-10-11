@@ -1,10 +1,7 @@
 """Support for Vitafit sensors."""
 
-from datetime import date, datetime
-from decimal import Decimal
-from typing import override
+from typing import cast, override
 
-from vitafit_ble import DeviceClass, DeviceKey, SensorUpdate, Units
 from vitafit_ble.const import MANUFACTURER, MODEL
 
 from homeassistant.components.bluetooth.passive_update_processor import (
@@ -27,28 +24,40 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.sensor import sensor_device_info_to_hass_device_info
 
 from . import VitafitConfigEntry
+from .const import IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH, UNIT_OHM
+from .coordinator import VitafitActiveBluetoothProcessorCoordinator, VitafitDataUpdate
 
-type SensorValueType = str | int | float | date | datetime | Decimal | None
+# The coordinator pushes updates; entities don't poll.
+PARALLEL_UPDATES = 0
+
+type SensorValueType = float | None
 
 SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
-    DeviceClass.MASS: SensorEntityDescription(
-        key=DeviceClass.MASS,
+    MASS: SensorEntityDescription(
+        key=MASS,
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
     ),
-    DeviceClass.IMPEDANCE: SensorEntityDescription(
-        key=DeviceClass.IMPEDANCE,
+    IMPEDANCE: SensorEntityDescription(
+        key=IMPEDANCE,
         translation_key="impedance",
-        native_unit_of_measurement=Units.OHM,
+        native_unit_of_measurement=UNIT_OHM,
         state_class=SensorStateClass.MEASUREMENT,
     ),
-    DeviceClass.SIGNAL_STRENGTH: SensorEntityDescription(
-        key=DeviceClass.SIGNAL_STRENGTH,
+    # No state class, so the settling readings stay out of long-term statistics.
+    REAL_TIME_WEIGHT: SensorEntityDescription(
+        key=REAL_TIME_WEIGHT,
+        translation_key="real_time_weight",
+        device_class=SensorDeviceClass.WEIGHT,
+        native_unit_of_measurement=UnitOfMass.KILOGRAMS,
+        suggested_display_precision=2,
+    ),
+    SIGNAL_STRENGTH: SensorEntityDescription(
+        key=SIGNAL_STRENGTH,
         device_class=SensorDeviceClass.SIGNAL_STRENGTH,
         native_unit_of_measurement=SIGNAL_STRENGTH_DECIBELS_MILLIWATT,
         state_class=SensorStateClass.MEASUREMENT,
@@ -57,34 +66,12 @@ SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
     ),
 }
 
-
-def _to_entity_key(device_key: DeviceKey) -> PassiveBluetoothEntityKey:
-    return PassiveBluetoothEntityKey(device_key.key, device_key.device_id)
-
-
-def sensor_update_to_bluetooth_data_update(
-    sensor_update: SensorUpdate,
-) -> PassiveBluetoothDataUpdate[SensorValueType]:
-    """Convert a sensor update to a bluetooth data update."""
-    return PassiveBluetoothDataUpdate(
-        devices={
-            device_id: sensor_device_info_to_hass_device_info(device_info)
-            for device_id, device_info in sensor_update.devices.items()
-        },
-        entity_descriptions={
-            _to_entity_key(device_key): SENSOR_DESCRIPTIONS[device_key.key]
-            for device_key in sensor_update.entity_descriptions
-        },
-        entity_data={
-            _to_entity_key(device_key): sensor_value.native_value
-            for device_key, sensor_value in sensor_update.entity_values.items()
-        },
-        entity_names={},
-    )
+# The last weigh-in, kept while the scale sleeps and restored after a restart.
+ALWAYS_AVAILABLE = {MASS, IMPEDANCE}
 
 
 def _seed_entities(
-    processor: PassiveBluetoothDataProcessor[SensorValueType, SensorUpdate],
+    processor: PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate],
     name: str,
 ) -> None:
     """Create the sensors that weren't restored, before the first advertisement."""
@@ -100,8 +87,7 @@ def _seed_entities(
     if not seed.entity_descriptions:
         return
     if None not in data.devices:
-        # Entities keep the device info they're created with,
-        # so match what the library sends.
+        # Entities keep the device info they're created with.
         seed.devices[None] = DeviceInfo(
             name=name, manufacturer=MANUFACTURER, model=MODEL
         )
@@ -115,7 +101,10 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Vitafit sensors."""
-    processor = PassiveBluetoothDataProcessor(sensor_update_to_bluetooth_data_update)
+    # The coordinator already builds the data updates.
+    processor = PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate](
+        lambda update: update
+    )
     entry.async_on_unload(
         processor.async_add_entities_listener(
             VitafitBluetoothSensorEntity, async_add_entities
@@ -129,11 +118,31 @@ async def async_setup_entry(
 
 class VitafitBluetoothSensorEntity(
     PassiveBluetoothProcessorEntity[
-        PassiveBluetoothDataProcessor[SensorValueType, SensorUpdate]
+        PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate]
     ],
     SensorEntity,
 ):
     """Representation of a Vitafit sensor."""
+
+    @property
+    @override
+    def available(self) -> bool:
+        """Return if the entity is available.
+
+        The real-time weight is available only while connected. The weight and
+        impedance are always available, like eufylife_ble's weight. The signal
+        strength follows the scale's advertisements.
+        """
+        key = self.entity_key.key
+        if key == REAL_TIME_WEIGHT:
+            coordinator = cast(
+                VitafitActiveBluetoothProcessorCoordinator,
+                self.processor.coordinator,
+            )
+            return coordinator.polling
+        if key in ALWAYS_AVAILABLE:
+            return True
+        return super().available
 
     @property
     @override

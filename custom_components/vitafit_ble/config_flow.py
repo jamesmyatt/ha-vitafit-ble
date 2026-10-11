@@ -2,7 +2,7 @@
 
 from typing import Any, override
 
-from vitafit_ble import VitafitBluetoothDeviceData as DeviceData
+from vitafit_ble import device_name, supported
 import voluptuous as vol
 
 from homeassistant.components import bluetooth
@@ -24,7 +24,6 @@ class VitafitConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._discovery_info: BluetoothServiceInfoBleak | None = None
-        self._discovered_device: DeviceData | None = None
         self._discovered_devices: dict[str, str] = {}
 
     @override
@@ -34,20 +33,17 @@ class VitafitConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle the bluetooth discovery step."""
         await self.async_set_unique_id(discovery_info.address)
         self._abort_if_unique_id_configured()
-        device = DeviceData()
-        if not device.supported(discovery_info):
+        if not supported(discovery_info):
             return self.async_abort(reason="not_supported")
         self._discovery_info = discovery_info
-        self._discovered_device = device
         return await self.async_step_bluetooth_confirm()
 
     async def async_step_bluetooth_confirm(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Confirm discovery."""
-        assert self._discovered_device is not None
         assert self._discovery_info is not None
-        title = self._discovered_device.title or self._discovery_info.name
+        title = device_name(self._discovery_info.address)
         if user_input is not None:
             return self.async_create_entry(title=title, data={})
 
@@ -77,9 +73,8 @@ class VitafitConfigFlow(ConfigFlow, domain=DOMAIN):
             address = discovery_info.address
             if address in current_addresses or address in self._discovered_devices:
                 continue
-            device = DeviceData()
-            if device.supported(discovery_info):
-                self._discovered_devices[address] = device.title or discovery_info.name
+            if supported(discovery_info):
+                self._discovered_devices[address] = device_name(address)
 
         if not self._discovered_devices:
             return self.async_abort(reason="no_devices_found")

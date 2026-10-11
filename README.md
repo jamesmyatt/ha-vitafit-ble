@@ -1,16 +1,23 @@
 # Vitafit BLE for Home Assistant
 
-Local Bluetooth integration for Vitafit BLE devices. It works with ESPHome Bluetooth proxies.
+Local Bluetooth integration for Vitafit smart scales, using the [vitafit-ble](https://github.com/jamesmyatt/vitafit-ble) library. It works with ESPHome Bluetooth proxies.
+
+Supported models:
+
+- Vitafit VT701 body fat scale
+
+The library's [supported devices](https://vitafit-ble.readthedocs.io/en/latest/supported_devices.html) page has the details. To request another model, open an issue there.
 
 Unofficial; not affiliated with Vitafit.
 
 ## Sensors
 
-| Sensor          | Unit | Notes                                                    |
-| --------------- | ---- | -------------------------------------------------------- |
-| Weight          | kg   | 0.01 kg resolution                                       |
-| Impedance       | ohm  | Whole-body. Unknown if you step off early or wear socks. |
-| Signal strength | dBm  | Diagnostic; disabled by default                          |
+| Sensor           | Unit | Notes                                                                          |
+| ---------------- | ---- | ------------------------------------------------------------------------------ |
+| Weight           | kg   | The last weigh-in, to 0.01 kg                                                  |
+| Impedance        | ohm  | The last weigh-in, whole-body. Unknown if you stepped off early or wore socks. |
+| Real-time weight | kg   | The weight as it settles, while connected. Not in long-term statistics.        |
+| Signal strength  | dBm  | Diagnostic; disabled by default                                                |
 
 The integration does not calculate body composition or assign readings to people. Build these from the weight and impedance sensors with templates or automations.
 
@@ -51,7 +58,7 @@ Step on the scale to wake it. Home Assistant discovers it and shows a notificati
 
 Readings within 60 s of the previous connection are ignored, so a weigh-in is not read twice.
 
-Entities show as unavailable while the scale is asleep, and this includes after a Home Assistant restart. Every reading is still kept in history and long-term statistics.
+Weight and impedance keep the last weigh-in while the scale is asleep and after a Home Assistant restart. A weigh-in without a stable weight, or a failed connection, leaves them unchanged. Real-time weight is only available while connected, and signal strength only while the scale is advertising.
 
 ## Known limitations
 

@@ -12,6 +12,9 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from . import VitafitConfigEntry
 from .coordinator import VitafitActiveBluetoothProcessorCoordinator
 
+# Turning the switch only sets a flag; it does no I/O.
+PARALLEL_UPDATES = 0
+
 WEIGHT_ONLY_DESCRIPTION = SwitchEntityDescription(
     key="weight_only",
     translation_key="weight_only",

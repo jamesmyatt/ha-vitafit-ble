@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import override
 
-from vitafit_ble import SensorUpdate, VitafitBluetoothDeviceData
+from vitafit_ble import VitafitSession, WeightFrame, async_poll, poll_needed
 
 from homeassistant.components.bluetooth import (
     BluetoothScanningMode,
@@ -15,38 +15,60 @@ from homeassistant.components.bluetooth import (
 from homeassistant.components.bluetooth.active_update_processor import (
     ActiveBluetoothProcessorCoordinator,
 )
+from homeassistant.components.bluetooth.passive_update_processor import (
+    PassiveBluetoothDataUpdate,
+    PassiveBluetoothEntityKey,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_time_interval
+
+from .const import IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH
 
 _LOGGER = logging.getLogger(__name__)
 
 # The longest wait between the scale waking and the poll starting.
 FALLBACK_POLL_INTERVAL = timedelta(seconds=5)
 
+type VitafitDataUpdate = PassiveBluetoothDataUpdate[float | None]
+
+
+def _data_update(values: dict[str, float | None]) -> VitafitDataUpdate:
+    """Return an update for the given sensor keys and values."""
+    return PassiveBluetoothDataUpdate(
+        entity_data={
+            PassiveBluetoothEntityKey(key, None): value for key, value in values.items()
+        }
+    )
+
 
 class VitafitActiveBluetoothProcessorCoordinator(
-    ActiveBluetoothProcessorCoordinator[SensorUpdate]
+    ActiveBluetoothProcessorCoordinator[VitafitDataUpdate]
 ):
-    """Coordinator for Vitafit scales."""
+    """Coordinator for Vitafit scales.
 
-    _data: VitafitBluetoothDeviceData
+    Advertisements update the signal strength, each weight frame during the poll
+    updates the real-time weight, and the poll's result updates the weight and
+    impedance.
+    """
+
     weight_only: bool
     """Select the scale's weight-only mode at the next weigh-in; set by the switch."""
+    polling: bool
+    """True while connected to the scale for a weigh-in."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the Vitafit Bluetooth processor coordinator."""
         address = entry.unique_id
         assert address is not None
-        self._data = VitafitBluetoothDeviceData()
         self.weight_only = False
-        self._polling = False
+        self.polling = False
         super().__init__(
             hass=hass,
             logger=_LOGGER,
             address=address,
             mode=BluetoothScanningMode.PASSIVE,
-            update_method=self._data.update,
+            update_method=self._async_on_advertisement,
             needs_poll_method=self._async_needs_poll,
             poll_method=self._async_poll_data,
             # Advertisements from non-connectable scanners are taken too,
@@ -57,7 +79,7 @@ class VitafitActiveBluetoothProcessorCoordinator(
     @override
     async def _async_poll_data(
         self, last_service_info: BluetoothServiceInfoBleak
-    ) -> SensorUpdate:
+    ) -> VitafitDataUpdate:
         """Poll the scale for one weigh-in."""
         # The advertisement may have come from a passive scanner,
         # so swap it for a connectable device.
@@ -71,13 +93,33 @@ class VitafitActiveBluetoothProcessorCoordinator(
             raise RuntimeError(
                 f"No connectable device found for {last_service_info.device.address}"
             )
-        self._polling = True
+        session = VitafitSession(weight_only=self.weight_only)
+        session.register_callback(WeightFrame, self._async_on_weight)
+        self.polling = True
         try:
-            return await self._data.async_poll(
-                connectable_device, weight_only=self.weight_only
-            )
+            measurement = await async_poll(connectable_device, session)
         finally:
-            self._polling = False
+            self.polling = False
+        # Disconnected, so the real-time weight goes unavailable. A failed
+        # weigh-in keeps the last weight and impedance.
+        values: dict[str, float | None] = {REAL_TIME_WEIGHT: None}
+        if measurement is not None:
+            values |= {
+                MASS: measurement.weight_kg,
+                IMPEDANCE: measurement.impedance_ohm,
+            }
+        return _data_update(values)
+
+    @callback
+    def _async_on_weight(self, frame: WeightFrame) -> None:
+        """Push each weight frame during the poll as the real-time weight."""
+        self.async_set_updated_data(_data_update({REAL_TIME_WEIGHT: frame.weight_kg}))
+
+    @callback
+    def _async_on_advertisement(
+        self, service_info: BluetoothServiceInfoBleak
+    ) -> VitafitDataUpdate:
+        return _data_update({SIGNAL_STRENGTH: service_info.rssi})
 
     @callback
     def _async_needs_poll(
@@ -87,8 +129,8 @@ class VitafitActiveBluetoothProcessorCoordinator(
         # and a connectable adapter or proxy can reach the scale.
         return (
             not self.hass.is_stopping
-            and not self._polling
-            and self._data.poll_needed(service_info, last_poll)
+            and not self.polling
+            and poll_needed(service_info, last_poll)
             and bool(
                 async_ble_device_from_address(
                     self.hass, service_info.device.address, connectable=True
