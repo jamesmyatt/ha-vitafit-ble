@@ -61,6 +61,12 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 
 `.github/renovate.json` disables updates to these. Renovate still updates Actions SHAs, dev container features and `vitafit-ble`, bumping the `manifest.json` pin in the same PR.
 
+## Release
+
+1. Bump `version` in `custom_components/vitafit_ble/manifest.json`.
+2. In `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/), one line per change, behaviour changes marked in bold under Changed), rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add a new empty `[Unreleased]` section, and update the links at the bottom.
+3. Merge `dev` into `main`, then publish a GitHub release named `vX.Y.Z` from `main`, with that version's changelog entry as its notes. HACS offers GitHub releases.
+
 ## Open items
 
 None. Confirmed by the owner on 12 Oct 2026, on the real scale in HA through an ESPHome proxy: weigh-ins work, the real-time weight is correct while standing on the scale, and two weigh-ins about 5 minutes apart are both polled (the fallback poll timer).
