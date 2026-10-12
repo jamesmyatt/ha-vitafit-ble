@@ -239,6 +239,39 @@ async def test_repeat_weigh_in_polled_by_timer(
     assert mock_scale.disconnect.await_count == 2
 
 
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_repeated_weight_is_a_new_state(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """Each weigh-in writes the weight, even when it repeats the last one."""
+    entry = await _async_setup(hass)
+    weights: list[str] = []
+    async_track_state_change_event(
+        hass, WEIGHT, lambda event: weights.append(event.data["new_state"].state)
+    )
+    with patch(
+        "homeassistant.components.bluetooth.active_update_processor"
+        ".monotonic_time_coarse",
+        return_value=monotonic_time_coarse() - 120,
+    ):
+        inject_service_info(hass, make_service_info())
+        await hass.async_block_till_done()
+    inject_service_info(hass, make_service_info())
+    async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL)
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
+    )
+    await hass.async_block_till_done()
+    assert mock_scale.disconnect.await_count == 2
+    assert weights == ["87.35", "87.35"]
+
+    # The scale going to sleep isn't a weigh-in.
+    entry.runtime_data._async_handle_unavailable(make_service_info())  # noqa: SLF001
+    await hass.async_block_till_done()
+    assert weights == ["87.35", "87.35"]
+    assert _state(hass, SIGNAL_STRENGTH) == STATE_UNAVAILABLE
+
+
 async def test_timer_ignores_sleeping_scale(
     hass: HomeAssistant, mock_scale: FakeScaleClient
 ) -> None:

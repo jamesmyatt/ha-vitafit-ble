@@ -1,6 +1,6 @@
 """Support for Vitafit sensors."""
 
-from typing import cast, override
+from typing import Any, cast, override
 
 from vitafit_ble.const import MANUFACTURER, MODEL
 
@@ -21,7 +21,7 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfMass,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -35,18 +35,21 @@ PARALLEL_UPDATES = 0
 type SensorValueType = float | None
 
 SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
+    # Each weigh-in is an event, so it changes the state even if the value repeats.
     MASS: SensorEntityDescription(
         key=MASS,
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        force_update=True,
     ),
     IMPEDANCE: SensorEntityDescription(
         key=IMPEDANCE,
         translation_key="impedance",
         native_unit_of_measurement=UNIT_OHM,
         state_class=SensorStateClass.MEASUREMENT,
+        force_update=True,
     ),
     # No state class, so the settling readings stay out of long-term statistics.
     REAL_TIME_WEIGHT: SensorEntityDescription(
@@ -66,8 +69,9 @@ SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
     ),
 }
 
-# The last weigh-in, kept while the scale sleeps and restored after a restart.
-ALWAYS_AVAILABLE = {MASS, IMPEDANCE}
+# The last weigh-in: always available, so kept while the scale sleeps and
+# restored after a restart, and written at every weigh-in.
+WEIGH_IN = {MASS, IMPEDANCE}
 
 
 def _set_descriptions(
@@ -126,6 +130,37 @@ class VitafitBluetoothSensorEntity(
 ):
     """Representation of a Vitafit sensor."""
 
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to the processor's updates."""
+        await super().async_added_to_hass()
+        if self.entity_key.key in WEIGH_IN:
+            # The processor only calls an entity's own listener when its value
+            # changes, so a weigh-in repeating the last value would be missed.
+            self.async_on_remove(
+                self.processor.async_add_listener(self._handle_weigh_in)
+            )
+
+    @callback
+    @override
+    def _handle_processor_update(
+        self, new_data: PassiveBluetoothDataUpdate[Any] | None
+    ) -> None:
+        """Handle a changed value, or the scale becoming (un)available."""
+        # The weigh-in sensors are written by _handle_weigh_in instead. They're
+        # always available, so with force_update, writing them when the scale
+        # goes to sleep would look like a new weigh-in.
+        if self.entity_key.key not in WEIGH_IN:
+            super()._handle_processor_update(new_data)
+
+    @callback
+    def _handle_weigh_in(
+        self, new_data: PassiveBluetoothDataUpdate[Any] | None
+    ) -> None:
+        """Write the state for each update with a value for this sensor."""
+        if new_data is not None and self.entity_key in new_data.entity_data:
+            self.async_write_ha_state()
+
     @property
     @override
     def available(self) -> bool:
@@ -142,7 +177,7 @@ class VitafitBluetoothSensorEntity(
                 self.processor.coordinator,
             )
             return coordinator.polling
-        if key in ALWAYS_AVAILABLE:
+        if key in WEIGH_IN:
             return True
         return super().available
 

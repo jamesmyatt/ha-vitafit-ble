@@ -19,6 +19,8 @@ Unofficial; not affiliated with Vitafit.
 | Real-time weight | kg   | The weight as it settles, while connected. Not in long-term statistics.        |
 | Signal strength  | dBm  | Diagnostic; disabled by default                                                |
 
+Weight and impedance are updated at every weigh-in, even when the reading is the same as last time, so automations can trigger on each weigh-in.
+
 The integration does not calculate body composition or assign readings to people. Build these from the weight and impedance sensors with templates or automations (see [Examples](#examples)).
 
 ## Use cases
@@ -80,7 +82,9 @@ automation:
     triggers:
       - trigger: state
         entity_id: sensor.vitafit_vt701_aa60_weight
-        not_from: unknown
+    conditions:
+      # Skip the sensor being removed or added, at startup or when the integration reloads.
+      - "{{ trigger.from_state and trigger.to_state and trigger.to_state.state | is_number }}"
     actions:
       - action: notify.mobile_app_your_phone
         data:
@@ -103,7 +107,6 @@ template:
 
 - Weight is always reported in kg. The scale keeps whichever display unit it is set to (kg, lb or st).
 - Two weigh-ins less than 60 s apart: only the first is read.
-- A weigh-in with exactly the same weight as the last one doesn't change the weight sensor's state, so state triggers don't fire.
 
 ## Troubleshooting
 
