@@ -119,6 +119,10 @@ template:
 
 **Settings → Devices & services → Vitafit → ⋮ → Delete**, then remove the HACS download or the `custom_components/vitafit_ble` folder.
 
+## Acknowledgements
+
+This library has been created with the assistance of Claude Code and Opus 5.5.
+
 ## Licence
 
 MIT
