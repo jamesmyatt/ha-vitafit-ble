@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 import logging
 from typing import override
 
+from bluetooth_data_tools import monotonic_time_coarse
 from vitafit_ble import VitafitSession, WeightFrame, async_poll, poll_needed
+from vitafit_ble.const import ADVERTISEMENT_MAX_AGE
 
 from homeassistant.components.bluetooth import (
     BluetoothReachabilityIntent,
@@ -34,6 +36,9 @@ _LOGGER = logging.getLogger(__name__)
 FALLBACK_POLL_INTERVAL = timedelta(seconds=5)
 
 ISSUE_NO_CONNECTABLE_SCANNER = "no_connectable_scanner"
+# How long the scale must be awake with no connectable scanner before the issue
+# is raised. The fallback timer's checks make it 5-10 s after the scale wakes.
+NO_CONNECTABLE_GRACE = 5.0
 TROUBLESHOOTING_URL = "https://github.com/jamesmyatt/ha-vitafit-ble#troubleshooting"
 
 
@@ -77,6 +82,7 @@ class VitafitActiveBluetoothProcessorCoordinator(
         self.polling = False
         self._name = entry.title
         self._no_connectable_issue = False
+        self._unreachable_since: float | None = None
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -140,6 +146,10 @@ class VitafitActiveBluetoothProcessorCoordinator(
     def _async_needs_poll(
         self, service_info: BluetoothServiceInfoBleak, last_poll: float | None
     ) -> bool:
+        now = monotonic_time_coarse()
+        if now - service_info.time > ADVERTISEMENT_MAX_AGE:
+            # Asleep, so the next wake starts a new grace period.
+            self._unreachable_since = None
         # Only poll if hass isn't stopping, no poll is running, a poll is due,
         # and a connectable adapter or proxy can reach the scale.
         if (
@@ -149,17 +159,21 @@ class VitafitActiveBluetoothProcessorCoordinator(
         ):
             return False
         # A poll is due, so the scale is awake. Without a connectable adapter or
-        # proxy, every weigh-in would be missed, so tell the user.
+        # proxy, every weigh-in would be missed, so tell the user. A passive
+        # scanner can hear the scale a moment before a connectable one does, so
+        # wait for the grace period first.
         if not async_ble_device_from_address(
             self.hass, service_info.device.address, connectable=True
         ):
-            self._async_create_no_connectable_issue()
+            if self._unreachable_since is None:
+                self._unreachable_since = now
+            elif now - self._unreachable_since >= NO_CONNECTABLE_GRACE:
+                self._async_create_no_connectable_issue()
             return False
-        if self._no_connectable_issue:
-            ir.async_delete_issue(
-                self.hass, DOMAIN, no_connectable_issue_id(self.address)
-            )
-            self._no_connectable_issue = False
+        self._unreachable_since = None
+        self._no_connectable_issue = False
+        # Unconditional, as the issue outlives a reload of the integration.
+        ir.async_delete_issue(self.hass, DOMAIN, no_connectable_issue_id(self.address))
         return True
 
     @callback
