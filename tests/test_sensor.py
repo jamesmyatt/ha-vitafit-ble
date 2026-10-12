@@ -10,18 +10,26 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
+from vitafit_ble.const import MANUFACTURER
 
 from custom_components.vitafit_ble.const import DOMAIN
 from custom_components.vitafit_ble.coordinator import FALLBACK_POLL_INTERVAL
 from homeassistant.components.bluetooth.active_update_processor import (
     POLL_DEFAULT_COOLDOWN,
 )
+from homeassistant.components.bluetooth.passive_update_processor import (
+    PASSIVE_UPDATE_PROCESSOR,
+)
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
     ATTR_UNIT_OF_MEASUREMENT,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -109,6 +117,66 @@ async def test_connection_failure(
     assert "Bluetooth error whilst polling" in caplog.text
     assert _state(hass, WEIGHT) == STATE_UNKNOWN
     assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize(
+    "error",
+    [BleakError("disconnected"), RuntimeError("unexpected")],
+    ids=["bleak", "other"],
+)
+async def test_drop_after_weight_frames(
+    hass: HomeAssistant, mock_scale: FakeScaleClient, error: Exception
+) -> None:
+    """A weigh-in that fails after the weight frames clears the real-time weight."""
+    await _async_setup(hass)
+    mock_scale.ack_error = error
+    real_time: list[str] = []
+    async_track_state_change_event(
+        hass,
+        REAL_TIME_WEIGHT,
+        lambda event: real_time.append(event.data["new_state"].state),
+    )
+    inject_service_info(hass, make_service_info())
+    await hass.async_block_till_done()
+
+    assert real_time == ["87.4", "87.35", STATE_UNAVAILABLE]
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+    mock_scale.disconnect.assert_awaited_once()
+
+
+async def test_restored_data_gets_current_descriptions(
+    hass: HomeAssistant, device_registry: dr.DeviceRegistry
+) -> None:
+    """Restored values are kept, with this version's descriptions and device info."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS, title="Vitafit VT701 AA60"
+    )
+    entry.add_to_hass(hass)
+    # Saved by an earlier version: a weight description without a device class,
+    # so its entity would have no name, and a device without a manufacturer.
+    hass.data[PASSIVE_UPDATE_PROCESSOR].all_restore_data[entry.entry_id] = {
+        "sensor": {
+            "devices": {"": {"name": "Vitafit VT701 AA60"}},
+            "entity_descriptions": {
+                "mass___": {"key": "mass", "native_unit_of_measurement": "kg"}
+            },
+            "entity_names": {},
+            "entity_data": {"mass___": 80.5},
+        }
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    weight = hass.states.get(WEIGHT)
+    assert weight is not None
+    assert weight.state == "80.5"
+    assert weight.attributes[ATTR_DEVICE_CLASS] == SensorDeviceClass.WEIGHT
+    assert _state(hass, IMPEDANCE) == STATE_UNKNOWN
+    device = device_registry.async_get_device_by_connection(
+        (CONNECTION_BLUETOOTH, ADDRESS), entry.entry_id
+    )
+    assert device is not None
+    assert device.manufacturer == MANUFACTURER
 
 
 async def test_no_stable_weight_keeps_last_weigh_in(

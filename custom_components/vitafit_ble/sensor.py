@@ -70,29 +70,27 @@ SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
 ALWAYS_AVAILABLE = {MASS, IMPEDANCE}
 
 
-def _seed_entities(
+def _set_descriptions(
     processor: PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate],
     name: str,
 ) -> None:
-    """Create the sensors that weren't restored, before the first advertisement."""
-    data = processor.data
-    seed = PassiveBluetoothDataUpdate[SensorValueType](
-        entity_descriptions={
-            entity_key: description
-            for key, description in SENSOR_DESCRIPTIONS.items()
-            if (entity_key := PassiveBluetoothEntityKey(key, None))
-            not in data.entity_descriptions
-        },
-    )
-    if not seed.entity_descriptions:
-        return
-    if None not in data.devices:
-        # Entities keep the device info they're created with.
-        seed.devices[None] = DeviceInfo(
-            name=name, manufacturer=MANUFACTURER, model=MODEL
+    """Set this version's descriptions and device info, keeping restored values.
+
+    The coordinator's updates carry only values, so without this, entities
+    would keep the descriptions saved by the version that first created them,
+    and sensors that weren't restored wouldn't exist until they had a value.
+    """
+    processor.data.update(
+        PassiveBluetoothDataUpdate[SensorValueType](
+            devices={
+                None: DeviceInfo(name=name, manufacturer=MANUFACTURER, model=MODEL)
+            },
+            entity_descriptions={
+                PassiveBluetoothEntityKey(key, None): description
+                for key, description in SENSOR_DESCRIPTIONS.items()
+            },
         )
-    data.update(seed)
-    processor.async_update_listeners(data)
+    )
 
 
 async def async_setup_entry(
@@ -105,15 +103,19 @@ async def async_setup_entry(
     processor = PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate](
         lambda update: update
     )
+    # Registering restores the last data. Entities keep the description and
+    # device info they're created with, so replace the restored ones before
+    # adding the listener that creates the entities.
+    entry.async_on_unload(
+        entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
+    )
+    _set_descriptions(processor, entry.title)
     entry.async_on_unload(
         processor.async_add_entities_listener(
             VitafitBluetoothSensorEntity, async_add_entities
         )
     )
-    entry.async_on_unload(
-        entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
-    )
-    _seed_entities(processor, entry.title)
+    processor.async_update_listeners(processor.data)
 
 
 class VitafitBluetoothSensorEntity(

@@ -1,4 +1,4 @@
-# Vitafit BLE for Home Assistant
+# Vitafit for Home Assistant
 
 Local Bluetooth integration for Vitafit smart scales, using the [vitafit-ble](https://github.com/jamesmyatt/vitafit-ble) library. It works with ESPHome Bluetooth proxies.
 

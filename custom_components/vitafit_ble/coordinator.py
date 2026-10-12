@@ -99,16 +99,17 @@ class VitafitActiveBluetoothProcessorCoordinator(
         try:
             measurement = await async_poll(connectable_device, session)
         finally:
+            # Disconnected, so the real-time weight goes unavailable. It's
+            # pushed here because the base class sends no update for a poll
+            # that raises, and the entity would keep showing the last frame.
             self.polling = False
-        # Disconnected, so the real-time weight goes unavailable. A failed
-        # weigh-in keeps the last weight and impedance.
-        values: dict[str, float | None] = {REAL_TIME_WEIGHT: None}
-        if measurement is not None:
-            values |= {
-                MASS: measurement.weight_kg,
-                IMPEDANCE: measurement.impedance_ohm,
-            }
-        return _data_update(values)
+            self.async_set_updated_data(_data_update({REAL_TIME_WEIGHT: None}))
+        # A failed weigh-in keeps the last weight and impedance.
+        if measurement is None:
+            return _data_update({})
+        return _data_update(
+            {MASS: measurement.weight_kg, IMPEDANCE: measurement.impedance_ohm}
+        )
 
     @callback
     def _async_on_weight(self, frame: WeightFrame) -> None:
