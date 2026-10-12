@@ -56,7 +56,7 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 
 - `homeassistant` and the test harness (`pytest-homeassistant-custom-component` 0.13.367)
 - core's ruff (0.16.3, a local hook in `.pre-commit-config.yaml`), mypy (2.3.1) and colorlog (6.10.1), plus `aiousbwatcher` and `serialx`
-- `hacs.json`'s `homeassistant`
+- `hacs.json`'s `homeassistant`, as the `.0` release (2026.9.0), so every 2026.9.x can install it
 - `.ruff.toml`, copied from core's `[tool.ruff.lint]`. Its only local additions are `target-version`, `custom_components` as first-party, and a `TID251` ignore for `tests/**`. Don't tune it.
 
 `.github/renovate.json` disables updates to these. Renovate still updates Actions SHAs, dev container features and `vitafit-ble`, bumping the `manifest.json` pin in the same PR.
