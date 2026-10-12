@@ -121,7 +121,7 @@ template:
 
 ## Acknowledgements
 
-This library has been created with the assistance of Claude Code and Opus 5.5.
+This integration has been created with the assistance of Claude Code and Opus 5.5.
 
 ## Licence
 
