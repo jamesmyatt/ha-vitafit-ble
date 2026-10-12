@@ -4,6 +4,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from bleak import BleakError
+from bleak.backends.device import BLEDevice
 from bluetooth_data_tools import monotonic_time_coarse
 import pytest
 from pytest_homeassistant_custom_component.common import (
@@ -177,6 +178,53 @@ async def test_restored_data_gets_current_descriptions(
     )
     assert device is not None
     assert device.manufacturer == MANUFACTURER
+
+
+async def test_poll_through_connectable_scanner(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """An advertisement from a passive scanner is polled through a connectable one."""
+    await _async_setup(hass)
+    info = make_service_info()
+    info.connectable = False
+    # The same scale, as seen by a connectable adapter or proxy.
+    connectable_device = BLEDevice(ADDRESS, "Vitafit Body Fat", {"source": "proxy"})
+    with (
+        patch(
+            "custom_components.vitafit_ble.coordinator.async_ble_device_from_address",
+            return_value=connectable_device,
+        ),
+        patch(
+            "vitafit_ble.device.establish_connection",
+            AsyncMock(return_value=mock_scale),
+        ) as connect,
+    ):
+        inject_service_info(hass, info)
+        await hass.async_block_till_done()
+
+    assert connect.call_args.args[1] is connectable_device
+    assert _state(hass, WEIGHT) == "87.35"
+
+
+async def test_connectable_scanner_lost(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Losing the connectable scanner before the poll is logged, and keeps the last weigh-in."""
+    await _async_setup(hass)
+    info = make_service_info()
+    info.connectable = False
+    # A connectable scanner can reach the scale when the poll is scheduled,
+    # but not by the time it runs.
+    with patch(
+        "custom_components.vitafit_ble.coordinator.async_ble_device_from_address",
+        side_effect=[BLEDevice(ADDRESS, "Vitafit Body Fat", {}), None],
+    ):
+        inject_service_info(hass, info)
+        await hass.async_block_till_done()
+
+    assert f"No connectable device found for {ADDRESS}" in caplog.text
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+    assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
 
 
 async def test_no_stable_weight_keeps_last_weigh_in(
