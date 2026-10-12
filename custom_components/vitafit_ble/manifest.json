@@ -15,5 +15,5 @@
   "issue_tracker": "https://github.com/jamesmyatt/ha-vitafit-ble/issues",
   "loggers": ["vitafit_ble"],
   "requirements": ["vitafit-ble==0.3.0"],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }
