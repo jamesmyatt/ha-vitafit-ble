@@ -62,4 +62,4 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 
 ## Open items
 
-- On the real scale: check the real-time weight updates while standing on it (the scale streams about every 0.36 s), and that two weigh-ins about 5 minutes apart are both polled.
+None. Confirmed by the owner on 12 Oct 2026, on the real scale in HA through an ESPHome proxy: weigh-ins work, the real-time weight is correct while standing on the scale, and two weigh-ins about 5 minutes apart are both polled (the fallback poll timer).
