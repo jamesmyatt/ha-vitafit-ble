@@ -61,7 +61,7 @@ Step on the scale to wake it. Home Assistant discovers it and shows a notificati
 
 ## How it works
 
-1. Stepping on the scale makes it advertise. The integration then connects through the nearest connectable adapter or proxy.
+1. Stepping on the scale makes it advertise. The integration then connects through the nearest connectable adapter or proxy. If none can reach the scale, it raises a repair (see [Troubleshooting](#troubleshooting)).
 2. It waits up to 30 s for a stable weight.
 3. It acknowledges the weight.
 4. It waits up to 10 s for impedance, then disconnects.
@@ -112,6 +112,7 @@ template:
 
 - **The scale isn't discovered:** step on it to wake it. It only advertises while it's awake. A Bluetooth adapter or proxy must be in range, and an ESPHome proxy needs `active: true`.
 - **The weight doesn't update:** stay on the scale until the weight is stable. Check that a connectable adapter or proxy is in range. If the Vitafit app is open nearby, it may connect to the scale first.
+- **A repair says the scale requires a connectable Bluetooth adapter or proxy:** Home Assistant can see the scale, but only through adapters or proxies that can't connect to it, so it can't read weigh-ins. Add an adapter or proxy that can connect, within range of the scale, or set `active: true` under `bluetooth_proxy` in your ESPHome proxy's configuration and install it. The repair clears at the next weigh-in that Home Assistant can read. Its details say which adapters and proxies can see the scale.
 - **Impedance is unknown:** stand barefoot on the four electrodes, and stay on until impedance is measured. Check that **Weight-only mode** is off.
 - **Reporting a problem:** on the integration's page, choose **⋮ → Enable debug logging**, weigh in, then disable it to download the log. Attach the log and the diagnostics (**⋮ → Download diagnostics** on the same page) to an [issue](https://github.com/jamesmyatt/ha-vitafit-ble/issues).
 

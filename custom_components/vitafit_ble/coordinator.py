@@ -7,8 +7,10 @@ from typing import override
 from vitafit_ble import VitafitSession, WeightFrame, async_poll, poll_needed
 
 from homeassistant.components.bluetooth import (
+    BluetoothReachabilityIntent,
     BluetoothScanningMode,
     BluetoothServiceInfoBleak,
+    async_address_reachability_diagnostics,
     async_ble_device_from_address,
     async_last_service_info,
 )
@@ -21,14 +23,24 @@ from homeassistant.components.bluetooth.passive_update_processor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH
+from .const import DOMAIN, IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH
 
 _LOGGER = logging.getLogger(__name__)
 
 # The longest wait between the scale waking and the poll starting.
 FALLBACK_POLL_INTERVAL = timedelta(seconds=5)
+
+ISSUE_NO_CONNECTABLE_SCANNER = "no_connectable_scanner"
+TROUBLESHOOTING_URL = "https://github.com/jamesmyatt/ha-vitafit-ble#troubleshooting"
+
+
+def no_connectable_issue_id(address: str) -> str:
+    """Return the ID of the repair issue for the scale at ``address``."""
+    return f"{ISSUE_NO_CONNECTABLE_SCANNER}_{address}"
+
 
 type VitafitDataUpdate = PassiveBluetoothDataUpdate[float | None]
 
@@ -63,6 +75,8 @@ class VitafitActiveBluetoothProcessorCoordinator(
         assert address is not None
         self.weight_only = False
         self.polling = False
+        self._name = entry.title
+        self._no_connectable_issue = False
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -128,15 +142,46 @@ class VitafitActiveBluetoothProcessorCoordinator(
     ) -> bool:
         # Only poll if hass isn't stopping, no poll is running, a poll is due,
         # and a connectable adapter or proxy can reach the scale.
-        return (
-            not self.hass.is_stopping
-            and not self.polling
-            and poll_needed(service_info, last_poll)
-            and bool(
-                async_ble_device_from_address(
-                    self.hass, service_info.device.address, connectable=True
-                )
+        if (
+            self.hass.is_stopping
+            or self.polling
+            or not poll_needed(service_info, last_poll)
+        ):
+            return False
+        # A poll is due, so the scale is awake. Without a connectable adapter or
+        # proxy, every weigh-in would be missed, so tell the user.
+        if not async_ble_device_from_address(
+            self.hass, service_info.device.address, connectable=True
+        ):
+            self._async_create_no_connectable_issue()
+            return False
+        if self._no_connectable_issue:
+            ir.async_delete_issue(
+                self.hass, DOMAIN, no_connectable_issue_id(self.address)
             )
+            self._no_connectable_issue = False
+        return True
+
+    @callback
+    def _async_create_no_connectable_issue(self) -> None:
+        """Raise a repair issue that no connectable scanner can reach the scale."""
+        if self._no_connectable_issue:
+            return
+        self._no_connectable_issue = True
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            no_connectable_issue_id(self.address),
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            learn_more_url=TROUBLESHOOTING_URL,
+            translation_key=ISSUE_NO_CONNECTABLE_SCANNER,
+            translation_placeholders={
+                "name": self._name,
+                "reason": async_address_reachability_diagnostics(
+                    self.hass, self.address, BluetoothReachabilityIntent.CONNECTION
+                ),
+            },
         )
 
     @callback

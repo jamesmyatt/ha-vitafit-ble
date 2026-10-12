@@ -35,5 +35,11 @@
         "name": "Weight-only mode"
       }
     }
+  },
+  "issues": {
+    "no_connectable_scanner": {
+      "title": "{name} requires a connectable Bluetooth adapter or proxy",
+      "description": "Home Assistant can see the scale **{name}**, but only through Bluetooth adapters or proxies that cannot connect to it, so it cannot read weigh-ins.\n\n**To fix this, do one of the following:**\n- Add a Bluetooth adapter or proxy that can connect, within range of the scale.\n- For an ESPHome Bluetooth proxy, set `active: true` under `bluetooth_proxy` in its configuration, then install it on the proxy.\n\nThis issue clears at the next weigh-in that Home Assistant can read.\n\nDetails: {reason}"
+    }
   }
 }
