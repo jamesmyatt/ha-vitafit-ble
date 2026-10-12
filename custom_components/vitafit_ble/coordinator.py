@@ -4,11 +4,15 @@ from datetime import datetime, timedelta
 import logging
 from typing import override
 
+from bluetooth_data_tools import monotonic_time_coarse
 from vitafit_ble import VitafitSession, WeightFrame, async_poll, poll_needed
+from vitafit_ble.const import ADVERTISEMENT_MAX_AGE
 
 from homeassistant.components.bluetooth import (
+    BluetoothReachabilityIntent,
     BluetoothScanningMode,
     BluetoothServiceInfoBleak,
+    async_address_reachability_diagnostics,
     async_ble_device_from_address,
     async_last_service_info,
 )
@@ -21,14 +25,27 @@ from homeassistant.components.bluetooth.passive_update_processor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_interval
 
-from .const import IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH
+from .const import DOMAIN, IMPEDANCE, MASS, REAL_TIME_WEIGHT, SIGNAL_STRENGTH
 
 _LOGGER = logging.getLogger(__name__)
 
 # The longest wait between the scale waking and the poll starting.
 FALLBACK_POLL_INTERVAL = timedelta(seconds=5)
+
+ISSUE_NO_CONNECTABLE_SCANNER = "no_connectable_scanner"
+# How long the scale must be awake with no connectable scanner before the issue
+# is raised. The fallback timer's checks make it 5-10 s after the scale wakes.
+NO_CONNECTABLE_GRACE = 5.0
+TROUBLESHOOTING_URL = "https://github.com/jamesmyatt/ha-vitafit-ble#troubleshooting"
+
+
+def no_connectable_issue_id(address: str) -> str:
+    """Return the ID of the repair issue for the scale at ``address``."""
+    return f"{ISSUE_NO_CONNECTABLE_SCANNER}_{address}"
+
 
 type VitafitDataUpdate = PassiveBluetoothDataUpdate[float | None]
 
@@ -63,6 +80,9 @@ class VitafitActiveBluetoothProcessorCoordinator(
         assert address is not None
         self.weight_only = False
         self.polling = False
+        self._name = entry.title
+        self._no_connectable_issue = False
+        self._unreachable_since: float | None = None
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -99,16 +119,17 @@ class VitafitActiveBluetoothProcessorCoordinator(
         try:
             measurement = await async_poll(connectable_device, session)
         finally:
+            # Disconnected, so the real-time weight goes unavailable. It's
+            # pushed here because the base class sends no update for a poll
+            # that raises, and the entity would keep showing the last frame.
             self.polling = False
-        # Disconnected, so the real-time weight goes unavailable. A failed
-        # weigh-in keeps the last weight and impedance.
-        values: dict[str, float | None] = {REAL_TIME_WEIGHT: None}
-        if measurement is not None:
-            values |= {
-                MASS: measurement.weight_kg,
-                IMPEDANCE: measurement.impedance_ohm,
-            }
-        return _data_update(values)
+            self.async_set_updated_data(_data_update({REAL_TIME_WEIGHT: None}))
+        # A failed weigh-in keeps the last weight and impedance.
+        if measurement is None:
+            return _data_update({})
+        return _data_update(
+            {MASS: measurement.weight_kg, IMPEDANCE: measurement.impedance_ohm}
+        )
 
     @callback
     def _async_on_weight(self, frame: WeightFrame) -> None:
@@ -125,17 +146,56 @@ class VitafitActiveBluetoothProcessorCoordinator(
     def _async_needs_poll(
         self, service_info: BluetoothServiceInfoBleak, last_poll: float | None
     ) -> bool:
+        now = monotonic_time_coarse()
+        if now - service_info.time > ADVERTISEMENT_MAX_AGE:
+            # Asleep, so the next wake starts a new grace period.
+            self._unreachable_since = None
         # Only poll if hass isn't stopping, no poll is running, a poll is due,
         # and a connectable adapter or proxy can reach the scale.
-        return (
-            not self.hass.is_stopping
-            and not self.polling
-            and poll_needed(service_info, last_poll)
-            and bool(
-                async_ble_device_from_address(
-                    self.hass, service_info.device.address, connectable=True
-                )
-            )
+        if (
+            self.hass.is_stopping
+            or self.polling
+            or not poll_needed(service_info, last_poll)
+        ):
+            return False
+        # A poll is due, so the scale is awake. Without a connectable adapter or
+        # proxy, every weigh-in would be missed, so tell the user. A passive
+        # scanner can hear the scale a moment before a connectable one does, so
+        # wait for the grace period first.
+        if not async_ble_device_from_address(
+            self.hass, service_info.device.address, connectable=True
+        ):
+            if self._unreachable_since is None:
+                self._unreachable_since = now
+            elif now - self._unreachable_since >= NO_CONNECTABLE_GRACE:
+                self._async_create_no_connectable_issue()
+            return False
+        self._unreachable_since = None
+        self._no_connectable_issue = False
+        # Unconditional, as the issue outlives a reload of the integration.
+        ir.async_delete_issue(self.hass, DOMAIN, no_connectable_issue_id(self.address))
+        return True
+
+    @callback
+    def _async_create_no_connectable_issue(self) -> None:
+        """Raise a repair issue that no connectable scanner can reach the scale."""
+        if self._no_connectable_issue:
+            return
+        self._no_connectable_issue = True
+        ir.async_create_issue(
+            self.hass,
+            DOMAIN,
+            no_connectable_issue_id(self.address),
+            is_fixable=False,
+            severity=ir.IssueSeverity.WARNING,
+            learn_more_url=TROUBLESHOOTING_URL,
+            translation_key=ISSUE_NO_CONNECTABLE_SCANNER,
+            translation_placeholders={
+                "name": self._name,
+                "reason": async_address_reachability_diagnostics(
+                    self.hass, self.address, BluetoothReachabilityIntent.CONNECTION
+                ),
+            },
         )
 
     @callback

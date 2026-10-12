@@ -1,0 +1,118 @@
+# Integration quality scale, in the format of HA core 2026.9.4.
+# hassfest only validates this file for core integrations, so it's documentation here.
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: The integration has no service actions.
+  appropriate-polling:
+    status: done
+    comment: |
+      Weigh-ins are read when the scale advertises, which it only does once
+      stepped on. The 5 s fallback timer only checks the Bluetooth manager's
+      latest advertisement, with no I/O.
+  brands: done
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency: done
+  docs-actions:
+    status: exempt
+    comment: The integration has no service actions.
+  docs-conditions:
+    status: exempt
+    comment: The integration has no device conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: The integration has no device triggers.
+  entity-event-setup: done
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure:
+    status: exempt
+    comment: |
+      The scale is found by Bluetooth discovery, and can only be connected to
+      while someone is standing on it.
+  test-before-setup:
+    status: exempt
+    comment: |
+      The scale is asleep except during a weigh-in, so setup can't reach it.
+  unique-config-entry: done
+  # Silver
+  action-exceptions:
+    status: exempt
+    comment: |
+      The only entity actions turn the weight-only switch on and off, which
+      sets a flag and can't fail.
+  config-entry-unloading: done
+  docs-configuration-parameters:
+    status: exempt
+    comment: The integration has no options flow.
+  docs-installation-parameters: done
+  entity-unavailable:
+    status: done
+    comment: |
+      Real-time weight is unavailable while disconnected, and signal strength
+      while the scale isn't advertising. Weight and impedance deliberately stay
+      available with the last weigh-in, like eufylife_ble's weight.
+  integration-owner: done
+  log-when-unavailable:
+    status: done
+    comment: |
+      The ActiveBluetoothProcessorCoordinator logs a failed poll once and its
+      recovery once.
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: The integration has no credentials.
+  test-coverage: done
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery: done
+  discovery-update-info:
+    status: exempt
+    comment: |
+      The Bluetooth address is the scale's identity, and there's no network
+      address to update.
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: Each config entry is a single scale.
+  entity-category: done
+  entity-device-class:
+    status: done
+    comment: Impedance has no device class, as HA has none for resistance.
+  entity-disabled-by-default: done
+  entity-translations: done
+  exception-translations:
+    status: exempt
+    comment: |
+      The integration raises no HomeAssistantError. Its one RuntimeError is
+      internal, and is caught and logged by the coordinator.
+  icon-translations: done
+  reconfiguration-flow:
+    status: exempt
+    comment: The config flow has no settings.
+  repair-issues: done
+  stale-devices:
+    status: exempt
+    comment: Each config entry is a single scale, removed with its entry.
+
+  # Platinum
+  async-dependency: done
+  inject-websession:
+    status: exempt
+    comment: The integration makes no HTTP requests.
+  strict-typing: done

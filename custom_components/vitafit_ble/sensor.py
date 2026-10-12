@@ -1,6 +1,6 @@
 """Support for Vitafit sensors."""
 
-from typing import cast, override
+from typing import Any, cast, override
 
 from vitafit_ble.const import MANUFACTURER, MODEL
 
@@ -21,7 +21,7 @@ from homeassistant.const import (
     EntityCategory,
     UnitOfMass,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -35,18 +35,21 @@ PARALLEL_UPDATES = 0
 type SensorValueType = float | None
 
 SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
+    # Each weigh-in is an event, so it changes the state even if the value repeats.
     MASS: SensorEntityDescription(
         key=MASS,
         device_class=SensorDeviceClass.WEIGHT,
         native_unit_of_measurement=UnitOfMass.KILOGRAMS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
+        force_update=True,
     ),
     IMPEDANCE: SensorEntityDescription(
         key=IMPEDANCE,
         translation_key="impedance",
         native_unit_of_measurement=UNIT_OHM,
         state_class=SensorStateClass.MEASUREMENT,
+        force_update=True,
     ),
     # No state class, so the settling readings stay out of long-term statistics.
     REAL_TIME_WEIGHT: SensorEntityDescription(
@@ -66,33 +69,32 @@ SENSOR_DESCRIPTIONS: dict[str, SensorEntityDescription] = {
     ),
 }
 
-# The last weigh-in, kept while the scale sleeps and restored after a restart.
-ALWAYS_AVAILABLE = {MASS, IMPEDANCE}
+# The last weigh-in: always available, so kept while the scale sleeps and
+# restored after a restart, and written at every weigh-in.
+WEIGH_IN = {MASS, IMPEDANCE}
 
 
-def _seed_entities(
+def _set_descriptions(
     processor: PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate],
     name: str,
 ) -> None:
-    """Create the sensors that weren't restored, before the first advertisement."""
-    data = processor.data
-    seed = PassiveBluetoothDataUpdate[SensorValueType](
-        entity_descriptions={
-            entity_key: description
-            for key, description in SENSOR_DESCRIPTIONS.items()
-            if (entity_key := PassiveBluetoothEntityKey(key, None))
-            not in data.entity_descriptions
-        },
-    )
-    if not seed.entity_descriptions:
-        return
-    if None not in data.devices:
-        # Entities keep the device info they're created with.
-        seed.devices[None] = DeviceInfo(
-            name=name, manufacturer=MANUFACTURER, model=MODEL
+    """Set this version's descriptions and device info, keeping restored values.
+
+    The coordinator's updates carry only values, so without this, entities
+    would keep the descriptions saved by the version that first created them,
+    and sensors that weren't restored wouldn't exist until they had a value.
+    """
+    processor.data.update(
+        PassiveBluetoothDataUpdate[SensorValueType](
+            devices={
+                None: DeviceInfo(name=name, manufacturer=MANUFACTURER, model=MODEL)
+            },
+            entity_descriptions={
+                PassiveBluetoothEntityKey(key, None): description
+                for key, description in SENSOR_DESCRIPTIONS.items()
+            },
         )
-    data.update(seed)
-    processor.async_update_listeners(data)
+    )
 
 
 async def async_setup_entry(
@@ -105,15 +107,19 @@ async def async_setup_entry(
     processor = PassiveBluetoothDataProcessor[SensorValueType, VitafitDataUpdate](
         lambda update: update
     )
+    # Registering restores the last data. Entities keep the description and
+    # device info they're created with, so replace the restored ones before
+    # adding the listener that creates the entities.
+    entry.async_on_unload(
+        entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
+    )
+    _set_descriptions(processor, entry.title)
     entry.async_on_unload(
         processor.async_add_entities_listener(
             VitafitBluetoothSensorEntity, async_add_entities
         )
     )
-    entry.async_on_unload(
-        entry.runtime_data.async_register_processor(processor, SensorEntityDescription)
-    )
-    _seed_entities(processor, entry.title)
+    processor.async_update_listeners(processor.data)
 
 
 class VitafitBluetoothSensorEntity(
@@ -123,6 +129,37 @@ class VitafitBluetoothSensorEntity(
     SensorEntity,
 ):
     """Representation of a Vitafit sensor."""
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to the processor's updates."""
+        await super().async_added_to_hass()
+        if self.entity_key.key in WEIGH_IN:
+            # The processor only calls an entity's own listener when its value
+            # changes, so a weigh-in repeating the last value would be missed.
+            self.async_on_remove(
+                self.processor.async_add_listener(self._handle_weigh_in)
+            )
+
+    @callback
+    @override
+    def _handle_processor_update(
+        self, new_data: PassiveBluetoothDataUpdate[Any] | None
+    ) -> None:
+        """Handle a changed value, or the scale becoming (un)available."""
+        # The weigh-in sensors are written by _handle_weigh_in instead. They're
+        # always available, so with force_update, writing them when the scale
+        # goes to sleep would look like a new weigh-in.
+        if self.entity_key.key not in WEIGH_IN:
+            super()._handle_processor_update(new_data)
+
+    @callback
+    def _handle_weigh_in(
+        self, new_data: PassiveBluetoothDataUpdate[Any] | None
+    ) -> None:
+        """Write the state for each update with a value for this sensor."""
+        if new_data is not None and self.entity_key in new_data.entity_data:
+            self.async_write_ha_state()
 
     @property
     @override
@@ -140,7 +177,7 @@ class VitafitBluetoothSensorEntity(
                 self.processor.coordinator,
             )
             return coordinator.polling
-        if key in ALWAYS_AVAILABLE:
+        if key in WEIGH_IN:
             return True
         return super().available
 

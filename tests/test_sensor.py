@@ -4,24 +4,33 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 from bleak import BleakError
+from bleak.backends.device import BLEDevice
 from bluetooth_data_tools import monotonic_time_coarse
 import pytest
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
+from vitafit_ble.const import MANUFACTURER
 
 from custom_components.vitafit_ble.const import DOMAIN
 from custom_components.vitafit_ble.coordinator import FALLBACK_POLL_INTERVAL
 from homeassistant.components.bluetooth.active_update_processor import (
     POLL_DEFAULT_COOLDOWN,
 )
+from homeassistant.components.bluetooth.passive_update_processor import (
+    PASSIVE_UPDATE_PROCESSOR,
+)
+from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.const import (
+    ATTR_DEVICE_CLASS,
     ATTR_UNIT_OF_MEASUREMENT,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
@@ -111,6 +120,113 @@ async def test_connection_failure(
     assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
 
 
+@pytest.mark.parametrize(
+    "error",
+    [BleakError("disconnected"), RuntimeError("unexpected")],
+    ids=["bleak", "other"],
+)
+async def test_drop_after_weight_frames(
+    hass: HomeAssistant, mock_scale: FakeScaleClient, error: Exception
+) -> None:
+    """A weigh-in that fails after the weight frames clears the real-time weight."""
+    await _async_setup(hass)
+    mock_scale.ack_error = error
+    real_time: list[str] = []
+    async_track_state_change_event(
+        hass,
+        REAL_TIME_WEIGHT,
+        lambda event: real_time.append(event.data["new_state"].state),
+    )
+    inject_service_info(hass, make_service_info())
+    await hass.async_block_till_done()
+
+    assert real_time == ["87.4", "87.35", STATE_UNAVAILABLE]
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+    mock_scale.disconnect.assert_awaited_once()
+
+
+async def test_restored_data_gets_current_descriptions(
+    hass: HomeAssistant, device_registry: dr.DeviceRegistry
+) -> None:
+    """Restored values are kept, with this version's descriptions and device info."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, unique_id=ADDRESS, title="Vitafit VT701 AA60"
+    )
+    entry.add_to_hass(hass)
+    # Saved by an earlier version: a weight description without a device class,
+    # so its entity would have no name, and a device without a manufacturer.
+    hass.data[PASSIVE_UPDATE_PROCESSOR].all_restore_data[entry.entry_id] = {
+        "sensor": {
+            "devices": {"": {"name": "Vitafit VT701 AA60"}},
+            "entity_descriptions": {
+                "mass___": {"key": "mass", "native_unit_of_measurement": "kg"}
+            },
+            "entity_names": {},
+            "entity_data": {"mass___": 80.5},
+        }
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    weight = hass.states.get(WEIGHT)
+    assert weight is not None
+    assert weight.state == "80.5"
+    assert weight.attributes[ATTR_DEVICE_CLASS] == SensorDeviceClass.WEIGHT
+    assert _state(hass, IMPEDANCE) == STATE_UNKNOWN
+    device = device_registry.async_get_device_by_connection(
+        (CONNECTION_BLUETOOTH, ADDRESS), entry.entry_id
+    )
+    assert device is not None
+    assert device.manufacturer == MANUFACTURER
+
+
+async def test_poll_through_connectable_scanner(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """An advertisement from a passive scanner is polled through a connectable one."""
+    await _async_setup(hass)
+    info = make_service_info()
+    info.connectable = False
+    # The same scale, as seen by a connectable adapter or proxy.
+    connectable_device = BLEDevice(ADDRESS, "Vitafit Body Fat", {"source": "proxy"})
+    with (
+        patch(
+            "custom_components.vitafit_ble.coordinator.async_ble_device_from_address",
+            return_value=connectable_device,
+        ),
+        patch(
+            "vitafit_ble.device.establish_connection",
+            AsyncMock(return_value=mock_scale),
+        ) as connect,
+    ):
+        inject_service_info(hass, info)
+        await hass.async_block_till_done()
+
+    assert connect.call_args.args[1] is connectable_device
+    assert _state(hass, WEIGHT) == "87.35"
+
+
+async def test_connectable_scanner_lost(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Losing the connectable scanner before the poll is logged, and keeps the last weigh-in."""
+    await _async_setup(hass)
+    info = make_service_info()
+    info.connectable = False
+    # A connectable scanner can reach the scale when the poll is scheduled,
+    # but not by the time it runs.
+    with patch(
+        "custom_components.vitafit_ble.coordinator.async_ble_device_from_address",
+        side_effect=[BLEDevice(ADDRESS, "Vitafit Body Fat", {}), None],
+    ):
+        inject_service_info(hass, info)
+        await hass.async_block_till_done()
+
+    assert f"No connectable device found for {ADDRESS}" in caplog.text
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+    assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
+
+
 async def test_no_stable_weight_keeps_last_weigh_in(
     hass: HomeAssistant, mock_scale: FakeScaleClient
 ) -> None:
@@ -169,6 +285,39 @@ async def test_repeat_weigh_in_polled_by_timer(
     )
     await hass.async_block_till_done()
     assert mock_scale.disconnect.await_count == 2
+
+
+@pytest.mark.usefixtures("entity_registry_enabled_by_default")
+async def test_repeated_weight_is_a_new_state(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """Each weigh-in writes the weight, even when it repeats the last one."""
+    entry = await _async_setup(hass)
+    weights: list[str] = []
+    async_track_state_change_event(
+        hass, WEIGHT, lambda event: weights.append(event.data["new_state"].state)
+    )
+    with patch(
+        "homeassistant.components.bluetooth.active_update_processor"
+        ".monotonic_time_coarse",
+        return_value=monotonic_time_coarse() - 120,
+    ):
+        inject_service_info(hass, make_service_info())
+        await hass.async_block_till_done()
+    inject_service_info(hass, make_service_info())
+    async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL)
+    async_fire_time_changed(
+        hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
+    )
+    await hass.async_block_till_done()
+    assert mock_scale.disconnect.await_count == 2
+    assert weights == ["87.35", "87.35"]
+
+    # The scale going to sleep isn't a weigh-in.
+    entry.runtime_data._async_handle_unavailable(make_service_info())  # noqa: SLF001
+    await hass.async_block_till_done()
+    assert weights == ["87.35", "87.35"]
+    assert _state(hass, SIGNAL_STRENGTH) == STATE_UNAVAILABLE
 
 
 async def test_timer_ignores_sleeping_scale(

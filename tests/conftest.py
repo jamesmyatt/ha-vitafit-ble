@@ -27,6 +27,8 @@ class FakeScaleClient:
         self._callback: Callable[[Any, bytearray], None] | None = None
         self.disconnect = AsyncMock()
         self.written: list[bytes] = []
+        self.ack_error: Exception | None = None
+        """Raised when acknowledging the stable weight, to simulate a drop."""
 
     async def start_notify(
         self, _: str, callback: Callable[[Any, bytearray], None]
@@ -42,6 +44,8 @@ class FakeScaleClient:
             self._callback(None, bytearray(SETTLING))
             self._callback(None, bytearray(STABLE))
         elif data == ACK_STABLE_WEIGHT:
+            if self.ack_error is not None:
+                raise self.ack_error
             self._callback(None, bytearray(IMPEDANCE))
 
 
