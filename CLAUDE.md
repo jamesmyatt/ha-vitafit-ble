@@ -59,7 +59,7 @@ Keep these on the minimum HA version (2026.9.4) and update them together, by han
 - `hacs.json`'s `homeassistant`, as the `.0` release (2026.9.0), so every 2026.9.x can install it
 - `.ruff.toml`, copied from core's `[tool.ruff.lint]`. Its only local additions are `target-version`, `custom_components` as first-party, and a `TID251` ignore for `tests/**`. Don't tune it.
 
-`.github/renovate.json` disables updates to these. Renovate still updates Actions SHAs, dev container features and `vitafit-ble`, bumping the `manifest.json` pin in the same PR.
+`.github/renovate.json` disables updates to these, and to new Python versions (3.x). Update Python by hand everywhere it appears: `test.yml`, `.devcontainer.json` (feature and `postCreateCommand`), and the `uv venv` commands in this file and `CONTRIBUTING.md`. Renovate still updates Actions SHAs, dev container features and `vitafit-ble`, bumping the `manifest.json` pin in the same PR.
 
 ## Release
 

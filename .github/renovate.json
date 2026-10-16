@@ -30,6 +30,12 @@
         "serialx"
       ],
       "enabled": false
+    },
+    {
+      "description": "Python versions track Home Assistant core and are also set in files Renovate doesn't manage; update them by hand",
+      "matchDepNames": ["python"],
+      "matchUpdateTypes": ["major", "minor"],
+      "enabled": false
     }
   ]
 }
