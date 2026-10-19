@@ -8,6 +8,12 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Changed
+
+- **Behaviour change:** acknowledges each settling and stable weight frame, as the Vitafit app does, so the scale can replace any that are missed or corrupt. (via vitafit-ble 0.5.0)
+- **Behaviour change:** if the scale reports impedance before a stable weight, the weigh-in ends at once with no new weight or impedance, instead of waiting for a stable weight that won't come. (via vitafit-ble 0.5.0)
+- Uses vitafit-ble 0.5.0.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added
