@@ -5,8 +5,7 @@ import logging
 from typing import override
 
 from bluetooth_data_tools import monotonic_time_coarse
-from vitafit_ble import VitafitSession, WeightFrame, async_poll, poll_needed
-from vitafit_ble.const import ADVERTISEMENT_MAX_AGE
+from vitafit_ble import VitafitSession, WeightFrame, async_poll, awake
 
 from homeassistant.components.bluetooth import (
     BluetoothReachabilityIntent,
@@ -34,6 +33,8 @@ _LOGGER = logging.getLogger(__name__)
 
 # The longest wait between the scale waking and the poll starting.
 FALLBACK_POLL_INTERVAL = timedelta(seconds=5)
+# Seconds after a weigh-in that gave a weight before polling again.
+POLL_INTERVAL = 60.0
 
 ISSUE_NO_CONNECTABLE_SCANNER = "no_connectable_scanner"
 # How long the scale must be awake with no connectable scanner before the issue
@@ -73,6 +74,8 @@ class VitafitActiveBluetoothProcessorCoordinator(
     """Select the scale's weight-only mode at the next weigh-in; set by the switch."""
     polling: bool
     """True while connected to the scale for a weigh-in."""
+    poll_failed: bool
+    """True if the last poll gave no weight, so the next waits for the next wake."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         """Initialize the Vitafit Bluetooth processor coordinator."""
@@ -83,6 +86,8 @@ class VitafitActiveBluetoothProcessorCoordinator(
         self._name = entry.title
         self._no_connectable_issue = False
         self._unreachable_since: float | None = None
+        self.poll_failed = False
+        self._slept_since_poll = False
         super().__init__(
             hass=hass,
             logger=_LOGGER,
@@ -101,6 +106,9 @@ class VitafitActiveBluetoothProcessorCoordinator(
         self, last_service_info: BluetoothServiceInfoBleak
     ) -> VitafitDataUpdate:
         """Poll the scale for one weigh-in."""
+        # Until a weight arrives, count the poll as failed, also if it raises.
+        self.poll_failed = True
+        self._slept_since_poll = False
         # The advertisement may have come from a passive scanner,
         # so swap it for a connectable device.
         if last_service_info.connectable:
@@ -127,6 +135,7 @@ class VitafitActiveBluetoothProcessorCoordinator(
         # A failed weigh-in keeps the last weight and impedance.
         if measurement is None:
             return _data_update({})
+        self.poll_failed = False
         return _data_update(
             {MASS: measurement.weight_kg, IMPEDANCE: measurement.impedance_ohm}
         )
@@ -147,16 +156,24 @@ class VitafitActiveBluetoothProcessorCoordinator(
         self, service_info: BluetoothServiceInfoBleak, last_poll: float | None
     ) -> bool:
         now = monotonic_time_coarse()
-        if now - service_info.time > ADVERTISEMENT_MAX_AGE:
+        scale_awake = awake(service_info)
+        if not scale_awake:
             # Asleep, so the next wake starts a new grace period.
             self._unreachable_since = None
+            self._slept_since_poll = True
+        if self.poll_failed:
+            # A poll without a weight, for any reason, waits for the next wake:
+            # until the scale sleeps, a new connection would get nothing. Then
+            # it polls at once, without the cooldown.
+            if not self._slept_since_poll:
+                return False
+            cooling_down = False
+        else:
+            # After a weigh-in that gave a weight, wait POLL_INTERVAL.
+            cooling_down = last_poll is not None and last_poll <= POLL_INTERVAL
         # Only poll if hass isn't stopping, no poll is running, a poll is due,
         # and a connectable adapter or proxy can reach the scale.
-        if (
-            self.hass.is_stopping
-            or self.polling
-            or not poll_needed(service_info, last_poll)
-        ):
+        if self.hass.is_stopping or self.polling or cooling_down or not scale_awake:
             return False
         # A poll is due, so the scale is awake. Without a connectable adapter or
         # proxy, every weigh-in would be missed, so tell the user. A passive
@@ -215,7 +232,7 @@ class VitafitActiveBluetoothProcessorCoordinator(
         # HA doesn't dispatch an advertisement that repeats the last one, so a
         # weigh-in soon after the previous one (before HA marks the scale
         # unavailable) wouldn't be polled. The Bluetooth manager still records
-        # each advertisement's time, which poll_needed checks for recency.
+        # each advertisement's time, which awake() checks for recency.
         service_info = (
             async_last_service_info(self.hass, self.address, connectable=False)
             or self._last_service_info

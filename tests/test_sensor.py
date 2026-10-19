@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-from vitafit_ble.const import MANUFACTURER
+from vitafit_ble.const import ADVERTISEMENT_MAX_AGE, MANUFACTURER
 
 from custom_components.vitafit_ble.const import DOMAIN
 from custom_components.vitafit_ble.coordinator import FALLBACK_POLL_INTERVAL
@@ -44,7 +44,7 @@ async def _async_setup(hass: HomeAssistant) -> MockConfigEntry:
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     return entry
 
 
@@ -81,7 +81,7 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
         lambda event: real_time.append(event.data["new_state"].state),
     )
     inject_service_info(hass, make_service_info())
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     # The live weight while connected, then unavailable once disconnected.
     assert real_time == ["87.4", "87.35", STATE_UNAVAILABLE]
@@ -100,7 +100,7 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
     mock_scale.disconnect.assert_awaited_once()
 
     assert await hass.config_entries.async_unload(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
 
 async def test_connection_failure(
@@ -113,11 +113,67 @@ async def test_connection_failure(
         AsyncMock(side_effect=BleakError("out of range")),
     ):
         inject_service_info(hass, make_service_info())
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
     assert "Bluetooth error whilst polling" in caplog.text
     assert _state(hass, WEIGHT) == STATE_UNKNOWN
     assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
+
+
+def _needs_poll_while_asleep(entry: MockConfigEntry) -> bool:
+    """Ask the coordinator about an advertisement, with the scale asleep."""
+    info = make_service_info()
+    later = info.time + ADVERTISEMENT_MAX_AGE + 1
+    with (
+        patch(
+            "custom_components.vitafit_ble.coordinator.monotonic_time_coarse",
+            return_value=later,
+        ),
+        patch("vitafit_ble.device.monotonic_time_coarse", return_value=later),
+    ):
+        return entry.runtime_data.needs_poll(info)
+
+
+@pytest.mark.parametrize("failure", ["bluetooth_error", "no_weight"])
+async def test_failed_poll_waits_for_next_wake(
+    hass: HomeAssistant, mock_scale: FakeScaleClient, failure: str
+) -> None:
+    """A poll without a weight is retried when the scale next wakes, at once."""
+    entry = await _async_setup(hass)
+    with (
+        patch(
+            "vitafit_ble.device.establish_connection",
+            AsyncMock(side_effect=BleakError("out of range")),
+        )
+        if failure == "bluetooth_error"
+        else patch(
+            "vitafit_ble.session.VitafitSession.async_measure",
+            AsyncMock(return_value=None),
+        )
+    ):
+        inject_service_info(hass, make_service_info())
+        await hass.async_block_till_done(wait_background_tasks=True)
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+
+    # Not again in the same wake, nor while asleep.
+    assert not entry.runtime_data.needs_poll(make_service_info())
+    assert not _needs_poll_while_asleep(entry)
+    # At the next wake, well within POLL_INTERVAL, without the cooldown.
+    assert entry.runtime_data.needs_poll(make_service_info())
+
+
+async def test_successful_poll_keeps_cooldown(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """After a weigh-in with a weight, the next wake within POLL_INTERVAL waits."""
+    entry = await _async_setup(hass)
+    inject_service_info(hass, make_service_info())
+    await hass.async_block_till_done(wait_background_tasks=True)
+    assert _state(hass, WEIGHT) == "87.35"
+
+    assert not entry.runtime_data.needs_poll(make_service_info())
+    assert not _needs_poll_while_asleep(entry)
+    assert not entry.runtime_data.needs_poll(make_service_info())
 
 
 @pytest.mark.parametrize(
@@ -138,7 +194,7 @@ async def test_drop_after_weight_frames(
         lambda event: real_time.append(event.data["new_state"].state),
     )
     inject_service_info(hass, make_service_info())
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     assert real_time == ["87.4", "87.35", STATE_UNAVAILABLE]
     assert _state(hass, WEIGHT) == STATE_UNKNOWN
@@ -166,7 +222,7 @@ async def test_restored_data_gets_current_descriptions(
         }
     }
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
 
     weight = hass.states.get(WEIGHT)
     assert weight is not None
@@ -200,7 +256,7 @@ async def test_poll_through_connectable_scanner(
         ) as connect,
     ):
         inject_service_info(hass, info)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
     assert connect.call_args.args[1] is connectable_device
     assert _state(hass, WEIGHT) == "87.35"
@@ -220,7 +276,7 @@ async def test_connectable_scanner_lost(
         side_effect=[BLEDevice(ADDRESS, "Vitafit Body Fat", {}), None],
     ):
         inject_service_info(hass, info)
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
     assert f"No connectable device found for {ADDRESS}" in caplog.text
     assert _state(hass, WEIGHT) == STATE_UNKNOWN
@@ -238,7 +294,7 @@ async def test_no_stable_weight_keeps_last_weigh_in(
         return_value=monotonic_time_coarse() - 120,
     ):
         inject_service_info(hass, make_service_info())
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
     assert _state(hass, WEIGHT) == "87.35"
 
     # The repeat advertisement is polled by the timer, after the cooldown.
@@ -250,7 +306,7 @@ async def test_no_stable_weight_keeps_last_weigh_in(
         async_fire_time_changed(
             hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
         )
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.disconnect.await_count == 2
     assert _state(hass, WEIGHT) == "87.35"
     assert _state(hass, IMPEDANCE) == "466"
@@ -268,13 +324,13 @@ async def test_repeat_weigh_in_polled_by_timer(
         return_value=monotonic_time_coarse() - 120,
     ):
         inject_service_info(hass, make_service_info())
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.disconnect.await_count == 1
 
     # The scale wakes again with an identical advertisement,
     # which HA doesn't dispatch.
     inject_service_info(hass, make_service_info())
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.disconnect.await_count == 1
 
     # The timer queues the poll, which runs once the debouncer's cooldown
@@ -283,7 +339,7 @@ async def test_repeat_weigh_in_polled_by_timer(
     async_fire_time_changed(
         hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
     )
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.disconnect.await_count == 2
 
 
@@ -303,19 +359,19 @@ async def test_repeated_weight_is_a_new_state(
         return_value=monotonic_time_coarse() - 120,
     ):
         inject_service_info(hass, make_service_info())
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
     inject_service_info(hass, make_service_info())
     async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL)
     async_fire_time_changed(
         hass, dt_util.utcnow() + timedelta(seconds=POLL_DEFAULT_COOLDOWN + 1)
     )
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.disconnect.await_count == 2
     assert weights == ["87.35", "87.35"]
 
     # The scale going to sleep isn't a weigh-in.
     entry.runtime_data._async_handle_unavailable(make_service_info())  # noqa: SLF001
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert weights == ["87.35", "87.35"]
     assert _state(hass, SIGNAL_STRENGTH) == STATE_UNAVAILABLE
 
@@ -329,5 +385,5 @@ async def test_timer_ignores_sleeping_scale(
     info.time -= 60
     inject_service_info(hass, info)
     async_fire_time_changed(hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     mock_scale.disconnect.assert_not_awaited()

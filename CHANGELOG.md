@@ -8,6 +8,15 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
+### Changed
+
+- **Behaviour change:** acknowledges each settling and stable weight frame, as the Vitafit app does, so the scale can replace any that are missed or corrupt. (via vitafit-ble 0.5.0)
+- **Behaviour change:** if the scale reports impedance before a stable weight, the weigh-in ends at once with no new weight or impedance, instead of waiting for a stable weight that won't come. (via vitafit-ble 0.5.0)
+- **Behaviour change:** after a weigh-in that gives no weight, for any reason (a Bluetooth error, no stable weight, or impedance first), the scale is polled again as soon as it next wakes, instead of up to 60 s later, and not again while it's still awake. After a weigh-in with a weight, it still waits at least 60 s. (requires vitafit-ble 0.6.0)
+- Uses vitafit-ble 0.6.0.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added
@@ -64,7 +73,8 @@ First release, for the Vitafit VT701 body fat scale.
 - Bluetooth discovery, plus manual setup.
 - Works with ESPHome Bluetooth proxies.
 
-[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.1.0...v0.2.0

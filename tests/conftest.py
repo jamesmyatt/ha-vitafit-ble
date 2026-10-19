@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
-from vitafit_ble.protocol import ACK_STABLE_WEIGHT, start_commands
+from vitafit_ble.protocol import start_commands
 
 from homeassistant.core import HomeAssistant
 
@@ -15,6 +15,8 @@ from homeassistant.core import HomeAssistant
 SETTLING = bytes.fromhex("5a 0a 26 10 01 00 00 21 22 24 1a aa")
 STABLE = bytes.fromhex("5a 0a 26 10 02 00 00 21 22 1f 22 aa")
 IMPEDANCE = bytes.fromhex("5a 0b 26 11 00 00 00 00 00 01 d2 ef aa")
+# The integration's acknowledgement of the stable weight.
+ACK_STABLE_WEIGHT = bytes.fromhex("a5 05 26 10 02 31 aa")
 # The last command the integration sends before waiting for a stable weight.
 HELLO_COMMAND = tuple(start_commands())[-1]
 
@@ -45,6 +47,9 @@ class FakeScaleClient:
             self._callback(None, bytearray(STABLE))
         elif data == ACK_STABLE_WEIGHT:
             if self.ack_error is not None:
+                # The scale keeps sending the stable weight, so the weigh-in
+                # sees the failed write at the next frame.
+                self._callback(None, bytearray(STABLE))
                 raise self.ack_error
             self._callback(None, bytearray(IMPEDANCE))
 
