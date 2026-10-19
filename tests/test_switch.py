@@ -30,7 +30,7 @@ async def _async_setup(hass: HomeAssistant) -> MockConfigEntry:
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     return entry
 
 
@@ -57,7 +57,7 @@ async def test_default_measures_impedance(
     assert entity.unique_id == f"{ADDRESS}-weight_only"
 
     inject_service_info(hass, make_service_info())
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.written[0] == NORMAL_MODE_COMMAND
 
 
@@ -72,7 +72,7 @@ async def test_weight_only(hass: HomeAssistant, mock_scale: FakeScaleClient) -> 
     assert entry.runtime_data.weight_only
 
     inject_service_info(hass, make_service_info())
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert mock_scale.written[0] == WEIGHT_ONLY_MODE_COMMAND
 
     await _async_switch(hass, SERVICE_TURN_OFF)

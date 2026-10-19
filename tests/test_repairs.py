@@ -67,7 +67,7 @@ async def _async_setup(hass: HomeAssistant) -> MockConfigEntry:
     )
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     return entry
 
 
@@ -97,7 +97,7 @@ async def _async_check(
         async_fire_time_changed(
             hass, dt_util.utcnow() + FALLBACK_POLL_INTERVAL * clock.timer_ticks
         )
-        await hass.async_block_till_done()
+        await hass.async_block_till_done(wait_background_tasks=True)
 
 
 async def _async_raise_issue(hass: HomeAssistant, clock: FakeClock) -> None:
@@ -182,7 +182,7 @@ async def test_issue_cleared_after_reload(
     # Reload while the scale is asleep, so nothing raises the issue again.
     clock.now += 30
     assert await hass.config_entries.async_reload(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     await _async_check(hass, clock, 1, connectable_device=CONNECTABLE_DEVICE)
 
     mock_scale.disconnect.assert_awaited_once()
@@ -198,5 +198,5 @@ async def test_issue_deleted_with_entry(
     assert issue_registry.async_get_issue(DOMAIN, ISSUE_ID) is not None
 
     await hass.config_entries.async_remove(entry.entry_id)
-    await hass.async_block_till_done()
+    await hass.async_block_till_done(wait_background_tasks=True)
     assert issue_registry.async_get_issue(DOMAIN, ISSUE_ID) is None
