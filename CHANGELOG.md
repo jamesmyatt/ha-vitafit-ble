@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Changed
 
 - **Behaviour change:** acknowledges each settling and stable weight frame, as the Vitafit app does, so the scale can replace any that are missed or corrupt. (via vitafit-ble 0.5.0)
@@ -70,7 +72,8 @@ First release, for the Vitafit VT701 body fat scale.
 - Bluetooth discovery, plus manual setup.
 - Works with ESPHome Bluetooth proxies.
 
-[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.1.0...v0.2.0
