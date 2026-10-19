@@ -11,7 +11,7 @@ from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_fire_time_changed,
 )
-from vitafit_ble.const import MANUFACTURER
+from vitafit_ble.const import ADVERTISEMENT_MAX_AGE, MANUFACTURER
 
 from custom_components.vitafit_ble.const import DOMAIN
 from custom_components.vitafit_ble.coordinator import FALLBACK_POLL_INTERVAL
@@ -118,6 +118,62 @@ async def test_connection_failure(
     assert "Bluetooth error whilst polling" in caplog.text
     assert _state(hass, WEIGHT) == STATE_UNKNOWN
     assert _state(hass, REAL_TIME_WEIGHT) == STATE_UNAVAILABLE
+
+
+def _needs_poll_while_asleep(entry: MockConfigEntry) -> bool:
+    """Ask the coordinator about an advertisement, with the scale asleep."""
+    info = make_service_info()
+    later = info.time + ADVERTISEMENT_MAX_AGE + 1
+    with (
+        patch(
+            "custom_components.vitafit_ble.coordinator.monotonic_time_coarse",
+            return_value=later,
+        ),
+        patch("vitafit_ble.device.monotonic_time_coarse", return_value=later),
+    ):
+        return entry.runtime_data.needs_poll(info)
+
+
+@pytest.mark.parametrize("failure", ["bluetooth_error", "no_weight"])
+async def test_failed_poll_waits_for_next_wake(
+    hass: HomeAssistant, mock_scale: FakeScaleClient, failure: str
+) -> None:
+    """A poll without a weight is retried when the scale next wakes, at once."""
+    entry = await _async_setup(hass)
+    with (
+        patch(
+            "vitafit_ble.device.establish_connection",
+            AsyncMock(side_effect=BleakError("out of range")),
+        )
+        if failure == "bluetooth_error"
+        else patch(
+            "vitafit_ble.session.VitafitSession.async_measure",
+            AsyncMock(return_value=None),
+        )
+    ):
+        inject_service_info(hass, make_service_info())
+        await hass.async_block_till_done()
+    assert _state(hass, WEIGHT) == STATE_UNKNOWN
+
+    # Not again in the same wake, nor while asleep.
+    assert not entry.runtime_data.needs_poll(make_service_info())
+    assert not _needs_poll_while_asleep(entry)
+    # At the next wake, well within POLL_INTERVAL, without the cooldown.
+    assert entry.runtime_data.needs_poll(make_service_info())
+
+
+async def test_successful_poll_keeps_cooldown(
+    hass: HomeAssistant, mock_scale: FakeScaleClient
+) -> None:
+    """After a weigh-in with a weight, the next wake within POLL_INTERVAL waits."""
+    entry = await _async_setup(hass)
+    inject_service_info(hass, make_service_info())
+    await hass.async_block_till_done()
+    assert _state(hass, WEIGHT) == "87.35"
+
+    assert not entry.runtime_data.needs_poll(make_service_info())
+    assert not _needs_poll_while_asleep(entry)
+    assert not entry.runtime_data.needs_poll(make_service_info())
 
 
 @pytest.mark.parametrize(

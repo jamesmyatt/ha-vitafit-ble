@@ -37,6 +37,7 @@ async def test_diagnostics(
     assert diagnostics["weight_only"] is False
     assert diagnostics["polling"] is False
     assert diagnostics["last_poll_successful"] is True
+    assert diagnostics["poll_failed"] is False
     assert diagnostics["service_info"] == {
         "name": "Vitafit Body Fat",
         "rssi": -60,

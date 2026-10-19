@@ -29,7 +29,7 @@ CONNECTABLE_DEVICE = BLEDevice(ADDRESS, "Vitafit Body Fat", {})
 
 
 class FakeClock:
-    """Monotonic clock for the coordinator and the library's poll_needed."""
+    """Monotonic clock for the coordinator and the library's awake()."""
 
     def __init__(self) -> None:
         """Start at the real time."""

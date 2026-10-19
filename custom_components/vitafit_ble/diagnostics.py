@@ -19,6 +19,7 @@ async def async_get_config_entry_diagnostics(
         "weight_only": coordinator.weight_only,
         "polling": coordinator.polling,
         "last_poll_successful": coordinator.last_poll_successful,
+        "poll_failed": coordinator.poll_failed,
         # The latest advertisement, or None if the scale hasn't been seen
         # since Home Assistant started.
         "service_info": service_info
