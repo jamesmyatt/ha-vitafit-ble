@@ -8,6 +8,10 @@ and this project adheres to
 
 ## [Unreleased]
 
+### Added
+
+- "Health & wellbeing" integration category.
+
 ## [0.5.0] - 2026-10-19
 
 ### Changed
