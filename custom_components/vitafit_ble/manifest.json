@@ -6,6 +6,7 @@
       "local_name": "Vitafit*"
     }
   ],
+  "categories": ["health_wellbeing"],
   "codeowners": ["@jamesmyatt"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
