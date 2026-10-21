@@ -8,6 +8,8 @@ and this project adheres to
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-21
+
 ### Added
 
 - "Health & wellbeing" integration category.
@@ -77,7 +79,8 @@ First release, for the Vitafit VT701 body fat scale.
 - Bluetooth discovery, plus manual setup.
 - Works with ESPHome Bluetooth proxies.
 
-[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/jamesmyatt/ha-vitafit-ble/compare/v0.2.0...v0.3.0
