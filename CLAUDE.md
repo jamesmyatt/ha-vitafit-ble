@@ -46,7 +46,7 @@ pytest --cov=custom_components.vitafit_ble --cov-report=term-missing
 
 Requirements files: `common` (pip, CI only), `lint` (pre-commit), `dev` (+ `colorlog`, `homeassistant`, `vitafit-ble`), `test` (+ mypy, the test harness, and `aiousbwatcher` and `serialx`, which the `bluetooth` integration needs through `usb`). `pyproject.toml` only holds the pytest and mypy config.
 
-CI: `test.yml` (mypy and pytest), `validate.yml` (hassfest on HA dev, and HACS), and pre-commit.ci (configured in `.pre-commit-config.yaml`). Mypy isn't a pre-commit hook, because it needs `homeassistant` installed.
+CI: `test.yml` (mypy and pytest), `validate.yml` (hassfest on HA dev, and HACS), `zizmor.yml` (workflow security analysis, reported in GitHub code scanning, so findings don't fail the run), and pre-commit.ci (configured in `.pre-commit-config.yaml`). Mypy isn't a pre-commit hook, because it needs `homeassistant` installed.
 
 Bluetooth in `scripts/develop` needs an ESPHome proxy, because neither WSL nor the container can reach the PC's adapter.
 
