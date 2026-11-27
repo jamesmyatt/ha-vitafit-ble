@@ -28,7 +28,7 @@ from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
 from homeassistant.helpers.event import async_track_state_change_event
@@ -78,7 +78,7 @@ async def test_weigh_in(hass: HomeAssistant, mock_scale: FakeScaleClient) -> Non
     async_track_state_change_event(
         hass,
         REAL_TIME_WEIGHT,
-        lambda event: real_time.append(event.data["new_state"].state),
+        callback(lambda event: real_time.append(event.data["new_state"].state)),
     )
     inject_service_info(hass, make_service_info())
     await hass.async_block_till_done(wait_background_tasks=True)
@@ -191,7 +191,7 @@ async def test_drop_after_weight_frames(
     async_track_state_change_event(
         hass,
         REAL_TIME_WEIGHT,
-        lambda event: real_time.append(event.data["new_state"].state),
+        callback(lambda event: real_time.append(event.data["new_state"].state)),
     )
     inject_service_info(hass, make_service_info())
     await hass.async_block_till_done(wait_background_tasks=True)
@@ -351,7 +351,9 @@ async def test_repeated_weight_is_a_new_state(
     entry = await _async_setup(hass)
     weights: list[str] = []
     async_track_state_change_event(
-        hass, WEIGHT, lambda event: weights.append(event.data["new_state"].state)
+        hass,
+        WEIGHT,
+        callback(lambda event: weights.append(event.data["new_state"].state)),
     )
     with patch(
         "homeassistant.components.bluetooth.active_update_processor"
