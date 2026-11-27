@@ -44,16 +44,24 @@ The **Weight-only mode** switch (under the device's configuration entities) does
 - Home Assistant 2026.9 or later.
 - A Bluetooth adapter or an ESPHome Bluetooth proxy within range of the scale. A proxy needs `active: true`, because the integration has to connect to the scale.
 
+<!-- ha-marketplace:exclude-start -->
+
 ## Installation
 
-### HACS
+### Marketplace
 
-1. HACS → ⋮ → Custom repositories → add `https://github.com/jamesmyatt/ha-vitafit-ble` as type Integration.
-2. Install **Vitafit**, then restart Home Assistant.
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jamesmyatt&repository=ha-vitafit-ble&category=integration)
+
+1. Select the button to open this repository in your Home Assistant's Marketplace, and add it as a custom repository. This needs a GitHub connection.
+2. Install **Vitafit**.
+
+The Marketplace needs Home Assistant 2026.11 or later. On 2026.9 or 2026.10, install manually.
 
 ### Manual
 
 Copy `custom_components/vitafit_ble` into your `config/custom_components` folder, then restart Home Assistant.
+
+<!-- ha-marketplace:exclude-end -->
 
 ## Setup
 
@@ -118,7 +126,7 @@ template:
 
 ## Removal
 
-**Settings → Devices & services → Vitafit → ⋮ → Delete**, then remove the HACS download or the `custom_components/vitafit_ble` folder.
+**Settings → Devices & services → Vitafit → ⋮ → Delete**, then remove **Vitafit** in **Settings → Marketplace**, or delete the `custom_components/vitafit_ble` folder.
 
 ## Acknowledgements
 
