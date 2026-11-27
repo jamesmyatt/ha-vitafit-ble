@@ -55,6 +55,8 @@ The **Weight-only mode** switch (under the device's configuration entities) does
 1. Select the button to open this repository in your Home Assistant's Marketplace, and add it as a custom repository. This needs a GitHub connection.
 2. Install **Vitafit**.
 
+The Marketplace needs Home Assistant 2026.11 or later. On 2026.9 or 2026.10, install manually.
+
 ### Manual
 
 Copy `custom_components/vitafit_ble` into your `config/custom_components` folder, then restart Home Assistant.
@@ -124,13 +126,7 @@ template:
 
 ## Removal
 
-**Settings → Devices & services → Vitafit → ⋮ → Delete**.
-
-<!-- ha-marketplace:exclude-start -->
-
-Then remove **Vitafit** in **Settings → Marketplace**, or delete the `custom_components/vitafit_ble` folder.
-
-<!-- ha-marketplace:exclude-end -->
+**Settings → Devices & services → Vitafit → ⋮ → Delete**, then remove **Vitafit** in **Settings → Marketplace**, or delete the `custom_components/vitafit_ble` folder.
 
 ## Acknowledgements
 
