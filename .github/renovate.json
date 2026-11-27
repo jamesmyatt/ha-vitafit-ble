@@ -3,7 +3,9 @@
   "extends": ["config:best-practices"],
   "minimumReleaseAge": "3 days",
   "osvVulnerabilityAlerts": true,
-  "dependencyDashboardOSVVulnerabilitySummary": "all",
+  "dependencyDashboard": {
+    "osvVulnerabilitySummary": "all"
+  },
   "timezone": "Europe/London",
   "customManagers": [
     {
