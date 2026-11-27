@@ -48,10 +48,12 @@ The **Weight-only mode** switch (under the device's configuration entities) does
 
 ## Installation
 
-### HACS
+### Marketplace
 
-1. HACS → ⋮ → Custom repositories → add `https://github.com/jamesmyatt/ha-vitafit-ble` as type Integration.
-2. Install **Vitafit**, then restart Home Assistant.
+[![Open your Home Assistant instance and open a repository in the Marketplace.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=jamesmyatt&repository=ha-vitafit-ble&category=integration)
+
+1. Select the button to open this repository in your Home Assistant's Marketplace, and add it as a custom repository. This needs a GitHub connection.
+2. Install **Vitafit**.
 
 ### Manual
 
@@ -126,7 +128,7 @@ template:
 
 <!-- ha-marketplace:exclude-start -->
 
-Then remove the HACS download or the `custom_components/vitafit_ble` folder.
+Then remove **Vitafit** in **Settings → Marketplace**, or delete the `custom_components/vitafit_ble` folder.
 
 <!-- ha-marketplace:exclude-end -->
 
