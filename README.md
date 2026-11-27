@@ -122,7 +122,13 @@ template:
 
 ## Removal
 
-**Settings → Devices & services → Vitafit → ⋮ → Delete**, then remove the HACS download or the `custom_components/vitafit_ble` folder.
+**Settings → Devices & services → Vitafit → ⋮ → Delete**.
+
+<!-- ha-marketplace:exclude-start -->
+
+Then remove the HACS download or the `custom_components/vitafit_ble` folder.
+
+<!-- ha-marketplace:exclude-end -->
 
 ## Acknowledgements
 
