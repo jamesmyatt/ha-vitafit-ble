@@ -44,6 +44,8 @@ The **Weight-only mode** switch (under the device's configuration entities) does
 - Home Assistant 2026.9 or later.
 - A Bluetooth adapter or an ESPHome Bluetooth proxy within range of the scale. A proxy needs `active: true`, because the integration has to connect to the scale.
 
+<!-- ha-marketplace:exclude-start -->
+
 ## Installation
 
 ### HACS
@@ -54,6 +56,8 @@ The **Weight-only mode** switch (under the device's configuration entities) does
 ### Manual
 
 Copy `custom_components/vitafit_ble` into your `config/custom_components` folder, then restart Home Assistant.
+
+<!-- ha-marketplace:exclude-end -->
 
 ## Setup
 
